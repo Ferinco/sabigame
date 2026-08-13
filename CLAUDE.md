@@ -17,7 +17,7 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 
 - `src/lib/supabase/client.ts` — browser client (Client Components)
 - `src/lib/supabase/server.ts` — server client (Server Components/Actions, async, cookie-based)
-- `src/lib/supabase/middleware.ts` + root `middleware.ts` — refreshes the auth session on every request
+- `src/lib/supabase/middleware.ts` (`refreshSupabaseSession`) + `src/proxy.ts` — refreshes the auth session on every request
 - `src/lib/supabase/admin.ts` — service-role client, server-only, bypasses RLS (used for writes like `guest_sessions` that anon policies intentionally don't allow)
 - Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (see `.env.local.example`; actual values go in untracked `.env.local`)
 - Supabase project URL + anon key are live in `.env.local`. `SUPABASE_SERVICE_ROLE_KEY` is still a placeholder — `ensureGuestSession` (called from root layout) will throw / 500 until the real key is dropped in.
@@ -25,9 +25,9 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 
 ## Guest sessions
 
-- `src/lib/guest/constants.ts` — cookie name (`sabigame_guest_id`) + max-age
-- `src/lib/guest/middleware.ts` — `ensureGuestId(request)`, called from root `middleware.ts`; generates a UUID via `crypto.randomUUID()` if the cookie's missing, mutates `request.cookies` so Server Components see it on the same request, and the response cookie is set for the browser to persist it (1yr, `sameSite: lax`)
-- `src/lib/guest/session.ts` — server-only helpers: `getGuestId()` (reads the cookie), `ensureGuestSession(guestId)` (upserts a `guest_sessions` row, no-op if it exists — called from root layout on every request), `setGuestNickname(guestId, nickname)` (not wired to UI yet — landing page nickname form is future work)
+- `src/lib/guest/constants.ts` — cookie name (`sabigame_guest_id`), header name (`x-sabigame-guest-id`), cookie max-age
+- `src/proxy.ts` — Next 16's proxy (formerly `middleware.ts`; must live inside `src/` when using a `src/app` layout — root-level placement is silently ignored). Reads/generates the guest ID, stamps it onto a cloned request header (the documented way to pass data from proxy into render — cookie-mutation tricks don't reliably propagate to the same-request render), sets the persistent cookie on the response for new guests, and calls `refreshSupabaseSession`
+- `src/lib/guest/session.ts` — server-only helpers: `getGuestId()` (reads the `x-sabigame-guest-id` header set by proxy), `ensureGuestSession(guestId)` (upserts a `guest_sessions` row, no-op if it exists — called from root layout on every request), `setGuestNickname(guestId, nickname)` (not wired to UI yet — landing page nickname form is future work)
 - `supabase/migrations/20260814000000_create_guest_sessions.sql` — `guest_sessions` table, RLS on with zero anon/authenticated policies (guests aren't Supabase Auth users, so writes only ever go through the service-role client server-side)
 
 ## Current state
@@ -48,6 +48,10 @@ Nothing else (matchmaking, realtime match loop, bot fallback, result screen, aut
 - Score validation is always server-side, never client-only
 - Bot opponents: random correct/incorrect + randomized delay, no real AI
 - Web only, no mobile app
+
+## Conventions
+
+- No code comments. Don't add them, even short ones.
 
 ## Repo / workflow
 

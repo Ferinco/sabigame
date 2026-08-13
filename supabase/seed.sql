@@ -1,11 +1,6 @@
--- Seed data for the `questions` table: ~150 questions across the two
--- launch categories (football, general_knowledge). Re-runnable: clears
--- existing rows first so local `supabase db reset` stays idempotent.
-
 truncate table public.questions;
 
 insert into public.questions (category, question, options, correct_answer_index) values
--- ===================== FOOTBALL (75) =====================
 ('football', 'Which country won the first FIFA World Cup in 1930?', ARRAY['Brazil','Uruguay','Argentina','Italy'], 1),
 ('football', 'How many players are on a football team on the pitch at one time (excluding substitutes)?', ARRAY['9','10','11','12'], 2),
 ('football', 'Which club has won the most UEFA Champions League titles?', ARRAY['AC Milan','Bayern Munich','Real Madrid','Liverpool'], 2),
@@ -82,7 +77,6 @@ insert into public.questions (category, question, options, correct_answer_index)
 ('football', 'What competition do the winners of each European domestic league qualify for?', ARRAY['Europa League','UEFA Champions League','Conference League','Super Cup'], 1),
 ('football', 'Which club is Harry Kane associated with as of the 2023-24 season?', ARRAY['Tottenham Hotspur','Bayern Munich','Manchester United','Chelsea'], 1),
 
--- ===================== GENERAL KNOWLEDGE (75) =====================
 ('general_knowledge', 'What is the capital of France?', ARRAY['Berlin','Madrid','Paris','Rome'], 2),
 ('general_knowledge', 'How many continents are there on Earth?', ARRAY['5','6','7','8'], 2),
 ('general_knowledge', 'What is the largest planet in our solar system?', ARRAY['Earth','Jupiter','Saturn','Neptune'], 1),
