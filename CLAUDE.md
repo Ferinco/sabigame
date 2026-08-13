@@ -18,18 +18,28 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 - `src/lib/supabase/client.ts` — browser client (Client Components)
 - `src/lib/supabase/server.ts` — server client (Server Components/Actions, async, cookie-based)
 - `src/lib/supabase/middleware.ts` + root `middleware.ts` — refreshes the auth session on every request
-- Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (see `.env.local.example`; actual values go in untracked `.env.local`)
-- No Supabase project has been provisioned/linked yet — client code exists but there's no live backend, schema, or seeded data.
+- `src/lib/supabase/admin.ts` — service-role client, server-only, bypasses RLS (used for writes like `guest_sessions` that anon policies intentionally don't allow)
+- Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (see `.env.local.example`; actual values go in untracked `.env.local`)
+- Supabase project URL + anon key are live in `.env.local`. `SUPABASE_SERVICE_ROLE_KEY` is still a placeholder — `ensureGuestSession` (called from root layout) will throw / 500 until the real key is dropped in.
+- Migrations have not been applied to the live project yet (no `supabase link` / `db push` run) — schema exists as code only so far.
+
+## Guest sessions
+
+- `src/lib/guest/constants.ts` — cookie name (`sabigame_guest_id`) + max-age
+- `src/lib/guest/middleware.ts` — `ensureGuestId(request)`, called from root `middleware.ts`; generates a UUID via `crypto.randomUUID()` if the cookie's missing, mutates `request.cookies` so Server Components see it on the same request, and the response cookie is set for the browser to persist it (1yr, `sameSite: lax`)
+- `src/lib/guest/session.ts` — server-only helpers: `getGuestId()` (reads the cookie), `ensureGuestSession(guestId)` (upserts a `guest_sessions` row, no-op if it exists — called from root layout on every request), `setGuestNickname(guestId, nickname)` (not wired to UI yet — landing page nickname form is future work)
+- `supabase/migrations/20260814000000_create_guest_sessions.sql` — `guest_sessions` table, RLS on with zero anon/authenticated policies (guests aren't Supabase Auth users, so writes only ever go through the service-role client server-side)
 
 ## Current state
 
-Steps 1-2 of the SPEC.md build order are done:
+Steps 1-3 of the SPEC.md build order are done:
 1. Project scaffolding + Supabase client wiring.
-2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table (RLS enabled, public read-only); `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge). Uses the local Supabase CLI (`npx supabase ...`) — no Docker in this environment, so migrations/seed have only been validated statically, not run against a live Postgres instance yet.
+2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table (RLS enabled, public read-only); `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge).
+3. Guest session handling — see above.
 
-No Supabase project has been provisioned/linked yet (no `.env.local` credentials, no `supabase link`) — schema and seed data exist as code but nothing has been applied to a real backend.
+Migrations/seed have only been validated statically (parsed for structural correctness), not run against a live Postgres instance — no Docker in this environment, so no local Supabase stack. They still need to be applied to the live project (`supabase link` + `supabase db push`, or run by hand in the SQL editor).
 
-Nothing else (guest sessions, matchmaking, realtime match loop, bot fallback, result screen, auth/score-locking, leaderboard) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones (e.g. guest sessions before matchmaking).
+Nothing else (matchmaking, realtime match loop, bot fallback, result screen, auth/score-locking, leaderboard) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
 ## Scope discipline (v1)
 
