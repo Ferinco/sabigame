@@ -23,7 +23,13 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 
 ## Current state
 
-Only step 1 of the SPEC.md build order is done: project scaffolding + Supabase client wiring. Nothing else (question bank, guest sessions, matchmaking, realtime match loop, bot fallback, result screen, auth/score-locking, leaderboard) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones (e.g. guest sessions before matchmaking).
+Steps 1-2 of the SPEC.md build order are done:
+1. Project scaffolding + Supabase client wiring.
+2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table (RLS enabled, public read-only); `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge). Uses the local Supabase CLI (`npx supabase ...`) — no Docker in this environment, so migrations/seed have only been validated statically, not run against a live Postgres instance yet.
+
+No Supabase project has been provisioned/linked yet (no `.env.local` credentials, no `supabase link`) — schema and seed data exist as code but nothing has been applied to a real backend.
+
+Nothing else (guest sessions, matchmaking, realtime match loop, bot fallback, result screen, auth/score-locking, leaderboard) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones (e.g. guest sessions before matchmaking).
 
 ## Scope discipline (v1)
 
