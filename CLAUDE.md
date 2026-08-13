@@ -20,8 +20,8 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 - `src/lib/supabase/middleware.ts` (`refreshSupabaseSession`) + `src/proxy.ts` — refreshes the auth session on every request
 - `src/lib/supabase/admin.ts` — service-role client, server-only, bypasses RLS (used for writes like `guest_sessions` that anon policies intentionally don't allow)
 - Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (see `.env.local.example`; actual values go in untracked `.env.local`)
-- Supabase project URL + anon key are live in `.env.local`. `SUPABASE_SERVICE_ROLE_KEY` is still a placeholder — `ensureGuestSession` (called from root layout) will throw / 500 until the real key is dropped in.
-- Migrations have not been applied to the live project yet (no `supabase link` / `db push` run) — schema exists as code only so far.
+- All three env vars are live real values in `.env.local` (URL, anon key, service role key).
+- Migrations + seed are applied to the live project (pushed via `supabase db push --db-url ... --include-all --include-seed`, no `supabase link` needed — CLI has no browser/token auth in this environment, so used `--db-url` with the pooler connection string directly). `questions` has 150 rows confirmed live via REST; `guest_sessions` exists with RLS blocking anon reads as designed.
 
 ## Guest sessions
 
@@ -37,7 +37,7 @@ Steps 1-3 of the SPEC.md build order are done:
 2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table (RLS enabled, public read-only); `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge).
 3. Guest session handling — see above.
 
-Migrations/seed have only been validated statically (parsed for structural correctness), not run against a live Postgres instance — no Docker in this environment, so no local Supabase stack. They still need to be applied to the live project (`supabase link` + `supabase db push`, or run by hand in the SQL editor).
+Verified end-to-end against the live project: hitting `/` returns 200, sets the `sabigame_guest_id` cookie, and no longer errors on `ensureGuestSession`.
 
 Nothing else (matchmaking, realtime match loop, bot fallback, result screen, auth/score-locking, leaderboard) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
