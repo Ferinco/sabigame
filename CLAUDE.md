@@ -21,7 +21,9 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 - `src/lib/supabase/admin.ts` — service-role client, server-only, bypasses RLS (used for writes like `guest_sessions` that anon policies intentionally don't allow)
 - Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (see `.env.local.example`; actual values go in untracked `.env.local`)
 - All three env vars are live real values in `.env.local` (URL, anon key, service role key).
-- Migrations + seed are applied to the live project (pushed via `supabase db push --db-url ... --include-all --include-seed`, no `supabase link` needed — CLI has no browser/token auth in this environment, so used `--db-url` with the pooler connection string directly). `questions` has 150 rows confirmed live via REST; `guest_sessions` exists with RLS blocking anon reads as designed.
+- Migrations + seed are applied to the live project (pushed via `supabase db push --db-url ... --include-all --include-seed`, no `supabase link` needed — CLI has no browser/token auth in this environment, so used `--db-url` with the pooler connection string directly). `questions` has 150 rows confirmed live via REST.
+- `CREATE OR REPLACE FUNCTION` fails if you change a plpgsql function's return columns — needs `DROP FUNCTION IF EXISTS` first. Bit us once on `matchmaking_try_pair`.
+- `questions` has **no** anon/authenticated SELECT policy (dropped in `20260816000000_lock_down_questions.sql` — it originally leaked `correct_answer_index` to anyone hitting the REST API). All question reads go through the service-role client server-side, which explicitly excludes the answer before anything reaches the browser.
 
 ## Guest sessions
 
@@ -33,22 +35,34 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 ## Matchmaking queue
 
 - `src/lib/categories.ts` — `Category` type (`"football" | "general_knowledge"`), `isCategory` guard
-- `supabase/migrations/20260815000000_create_matches.sql` — `matches` table, RLS on, no client policies yet (writes are server-only; whether clients need direct read access gets decided in step 5, when the realtime loop's read pattern is clear)
+- `supabase/migrations/20260815000000_create_matches.sql` — `matches` table, RLS on, no client policies (writes and reads are both server-only via the admin client; clients get match state as props from the Server Component, never a direct table read)
 - `supabase/migrations/20260815000001_create_matchmaking_queue.sql` — `matchmaking_queue` table, `guest_id` is the primary key (one active queue slot per guest)
 - `supabase/migrations/20260815000002_matchmaking_try_pair_fn.sql` — `matchmaking_try_pair(p_guest_id, p_category)` Postgres function: single transaction, `FOR UPDATE SKIP LOCKED` to grab the oldest waiting opponent in that category, avoiding races between two guests joining concurrently. Dequeues + inserts into `matches` if a pair is found; otherwise upserts the caller into the queue. Always removes the caller's own stale queue entry first (prevents self-pairing).
-- `src/lib/matchmaking/actions.ts` — Server Actions calling the RPC via the admin client: `joinMatchmakingQueue(category)`, `checkMatchmakingStatus()` (poll-based — the already-waiting player has no push notification until step 5's realtime channel exists), `leaveMatchmakingQueue()`
+- `src/lib/matchmaking/actions.ts` — Server Actions calling the RPC via the admin client: `joinMatchmakingQueue(category)` (returns `firstRoundId` too, now that pairing also creates round 1), `checkMatchmakingStatus()` (poll-based — see below), `leaveMatchmakingQueue()`
+
+## Real-time match loop
+
+- `supabase/migrations/20260816000001_create_match_rounds.sql` — `match_rounds` table: `match_id`, `question_id`, denormalized `question_text`/`options` (no answer — copied server-side at round-creation time), `started_at`, `winner_guest_id`, `answered_at`. RLS on with a public SELECT policy (`using (true)`) — safe, since the table never carries the answer.
+- `supabase/migrations/20260816000002_realtime_publication.sql` — adds `match_rounds` to the `supabase_realtime` publication so `postgres_changes` subscriptions fire on it.
+- `supabase/migrations/20260816000003_matchmaking_first_round.sql` — `matchmaking_try_pair` now also picks a random question and inserts the first `match_rounds` row when it creates a match.
+- `supabase/migrations/20260816000004_submit_answer_fn.sql` — `submit_answer(p_round_id, p_guest_id, p_answer_index)`: looks up the real `correct_answer_index` from `questions` (never trusts the client), and if it matches, does an atomic `UPDATE match_rounds SET winner_guest_id = ... WHERE winner_guest_id IS NULL` — only the first correct submitter claims it, everyone else racing gets `claimed: false` even if their answer was also correct. On a successful claim it either inserts the next random question (new round → clients pick it up via realtime) or, if `now() >= matches.started_at + 15s`, ends the match (`matches.ended_at`) — the 15s cutoff is enforced in Postgres, not trusted from any client's local clock.
+- `src/lib/match/actions.ts` — `getMatch`, `getCurrentRound` (initial state for the Server Component), `submitAnswer` (wraps the RPC), `getMyGuestId`
+- `src/app/page.tsx` — landing page (Client Component): category buttons → `joinMatchmakingQueue`, polls `checkMatchmakingStatus` every 2s while waiting, redirects to `/match/[matchId]` once matched
+- `src/app/match/[matchId]/page.tsx` — Server Component: fetches match + current round via the admin client, passes them as props (never a client-side table read)
+- `src/components/match/MatchRoom.tsx` — Client Component: subscribes to `match_rounds` INSERT (new question) and UPDATE (round claimed, for live scoreboard) via `postgres_changes`, renders question/options, submits answers, runs a local 15s countdown from `matches.started_at` (client-side stop only — server truth is separate and authoritative)
 
 ## Current state
 
-Steps 1-4 of the SPEC.md build order are done:
+Steps 1-5 of the SPEC.md build order are done:
 1. Project scaffolding + Supabase client wiring.
-2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table (RLS enabled, public read-only); `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge).
+2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table; `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge).
 3. Guest session handling — see above.
 4. Matchmaking queue — see above.
+5. Real-time match loop — see above.
 
-Verified end-to-end against the live project: hitting `/` returns 200, sets the `sabigame_guest_id` cookie, and no longer errors on `ensureGuestSession`. Matchmaking pairing verified directly via RPC (two guest IDs, same category — first got queued, second got paired with the first as opponent, queue row cleaned up, one `matches` row created).
+Verified end-to-end against the live project: guest cookie/session flow works; matchmaking pairing verified via RPC; full match flow verified via RPC (pairing creates round 1 → correct answer within 15s claims the round and creates round 2 → a second, later-arriving correct answer to an already-claimed round gets `claimed: false`, no double scoring → answering after the 15s window ends the match instead of advancing). Match page verified rendering live server-fetched round data (question/options present, `correct_answer_index` never appears in the response). Realtime subscription code is in place and matches Supabase's documented `postgres_changes` pattern, but hasn't been watched live in an actual two-browser-tab session — only single-request server rendering and direct RPC calls have been checked so far.
 
-Nothing else (realtime match loop, bot fallback, result screen, auth/score-locking, leaderboard) has been built yet, and no UI exists yet — everything so far is server-side (Server Actions/proxy/DB). Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
+Nothing else (bot fallback, result screen, auth/score-locking, leaderboard) has been built yet. There's no nickname UI, no rematch/new-match flow, and no visible reaction when the match ends for the player who *didn't* submit the game-ending answer (they only find out via their own local countdown hitting zero). Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
 ## Scope discipline (v1)
 
