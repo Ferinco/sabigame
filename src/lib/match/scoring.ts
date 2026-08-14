@@ -1,6 +1,5 @@
-export type AnswerFeedback = "correct" | "wrong" | "late";
+export type AnswerFeedback = "correct" | "wrong";
 
-export function deriveFeedback(result: { correct: boolean; claimed: boolean }): AnswerFeedback {
-  if (!result.correct) return "wrong";
-  return result.claimed ? "correct" : "late";
+export function deriveFeedback(result: { correct: boolean }): AnswerFeedback {
+  return result.correct ? "correct" : "wrong";
 }

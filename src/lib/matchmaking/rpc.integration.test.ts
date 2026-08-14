@@ -36,6 +36,14 @@ afterEach(async () => {
 
   const matchIds = [...new Set((results ?? []).map((r) => r.match_id))];
   if (matchIds.length > 0) {
+    const { data: rounds } = await admin
+      .from("match_rounds")
+      .select("id")
+      .in("match_id", matchIds);
+    const roundIds = (rounds ?? []).map((r) => r.id);
+    if (roundIds.length > 0) {
+      await admin.from("round_answers").delete().in("round_id", roundIds);
+    }
     await admin.from("match_rounds").delete().in("match_id", matchIds);
     await admin.from("match_results").delete().in("match_id", matchIds);
     await admin.from("matches").delete().in("id", matchIds);
@@ -162,7 +170,7 @@ describe("matchmaking_bot_fallback", () => {
   });
 });
 
-describe("submit_answer + advance_match_round", () => {
+describe("submit_answer + resolve_round", () => {
   async function createMatch() {
     const { guests, result } = await formMatch("football", 4);
     const { data: round } = await admin
@@ -175,78 +183,20 @@ describe("submit_answer + advance_match_round", () => {
       .select("correct_answer_index")
       .eq("id", round!.question_id)
       .single();
+    const correctIndex = question!.correct_answer_index as number;
+    const wrongIndex = correctIndex === 0 ? 1 : 0;
 
     return {
       guests,
       matchId: result.match_id as string,
       roundId: result.first_round_id as string,
-      correctIndex: question!.correct_answer_index as number,
+      correctIndex,
+      wrongIndex,
     };
   }
 
-  it("claims the round, increments score, and creates round 2", async () => {
-    const { guests, matchId, roundId, correctIndex } = await createMatch();
-
-    const { data } = await admin.rpc("submit_answer", {
-      p_round_id: roundId,
-      p_guest_id: guests[0],
-      p_answer_index: correctIndex,
-    });
-
-    expect(data?.[0]).toMatchObject({ correct: true, claimed: true, match_ended: false });
-    expect(data?.[0].next_round_id).toBeTruthy();
-
-    const { data: score } = await admin
-      .from("match_results")
-      .select("score")
-      .eq("match_id", matchId)
-      .eq("player_id", guests[0])
-      .single();
-    expect(score?.score).toBe(1);
-
-    const { data: round2 } = await admin
-      .from("match_rounds")
-      .select("round_number")
-      .eq("id", data![0].next_round_id)
-      .single();
-    expect(round2?.round_number).toBe(2);
-  });
-
-  it("does not let a second correct answer double-claim the same round", async () => {
+  it("does not resolve until every participant has answered", async () => {
     const { guests, roundId, correctIndex } = await createMatch();
-
-    await admin.rpc("submit_answer", {
-      p_round_id: roundId,
-      p_guest_id: guests[0],
-      p_answer_index: correctIndex,
-    });
-
-    const { data } = await admin.rpc("submit_answer", {
-      p_round_id: roundId,
-      p_guest_id: guests[1],
-      p_answer_index: correctIndex,
-    });
-
-    expect(data?.[0]).toMatchObject({ correct: true, claimed: false });
-  });
-
-  it("does not award a wrong answer", async () => {
-    const { guests, roundId, correctIndex } = await createMatch();
-    const wrongIndex = correctIndex === 0 ? 1 : 0;
-
-    const { data } = await admin.rpc("submit_answer", {
-      p_round_id: roundId,
-      p_guest_id: guests[0],
-      p_answer_index: wrongIndex,
-    });
-
-    expect(data?.[0]).toMatchObject({ correct: false, claimed: false });
-  });
-
-  it("ends the match after question_count rounds instead of advancing", async () => {
-    const { guests, matchId, roundId, correctIndex } = await createMatch();
-
-    await admin.from("matches").update({ question_count: 1 }).eq("id", matchId);
 
     const { data } = await admin.rpc("submit_answer", {
       p_round_id: roundId,
@@ -256,7 +206,97 @@ describe("submit_answer + advance_match_round", () => {
 
     expect(data?.[0]).toMatchObject({
       correct: true,
-      claimed: true,
+      recorded: true,
+      match_ended: false,
+      next_round_id: null,
+    });
+
+    const { data: round } = await admin
+      .from("match_rounds")
+      .select("resolved_at")
+      .eq("id", roundId)
+      .single();
+    expect(round?.resolved_at).toBeNull();
+  });
+
+  it("awards 10/8/7/6 by answer speed among correct answers, 0 for wrong, and resolves once everyone has answered", async () => {
+    const { guests, matchId, roundId, correctIndex, wrongIndex } = await createMatch();
+
+    await admin.rpc("submit_answer", {
+      p_round_id: roundId,
+      p_guest_id: guests[0],
+      p_answer_index: correctIndex,
+    });
+    await admin.rpc("submit_answer", {
+      p_round_id: roundId,
+      p_guest_id: guests[1],
+      p_answer_index: correctIndex,
+    });
+    await admin.rpc("submit_answer", {
+      p_round_id: roundId,
+      p_guest_id: guests[2],
+      p_answer_index: wrongIndex,
+    });
+    const { data } = await admin.rpc("submit_answer", {
+      p_round_id: roundId,
+      p_guest_id: guests[3],
+      p_answer_index: correctIndex,
+    });
+
+    expect(data?.[0]).toMatchObject({ correct: true, recorded: true, match_ended: false });
+    expect(data?.[0].next_round_id).toBeTruthy();
+
+    const { data: scores } = await admin
+      .from("match_results")
+      .select("player_id, score")
+      .eq("match_id", matchId);
+    const byPlayer = Object.fromEntries(scores!.map((s) => [s.player_id, s.score]));
+    expect(byPlayer[guests[0]]).toBe(10);
+    expect(byPlayer[guests[1]]).toBe(8);
+    expect(byPlayer[guests[2]]).toBe(0);
+    expect(byPlayer[guests[3]]).toBe(7);
+
+    const { data: round } = await admin
+      .from("match_rounds")
+      .select("resolved_at")
+      .eq("id", roundId)
+      .single();
+    expect(round?.resolved_at).not.toBeNull();
+  });
+
+  it("rejects a second submission from the same player for the same round", async () => {
+    const { guests, roundId, correctIndex, wrongIndex } = await createMatch();
+
+    await admin.rpc("submit_answer", {
+      p_round_id: roundId,
+      p_guest_id: guests[0],
+      p_answer_index: correctIndex,
+    });
+
+    const { data } = await admin.rpc("submit_answer", {
+      p_round_id: roundId,
+      p_guest_id: guests[0],
+      p_answer_index: wrongIndex,
+    });
+
+    expect(data?.[0].recorded).toBe(false);
+  });
+
+  it("ends the match after question_count rounds instead of advancing", async () => {
+    const { guests, matchId, roundId, correctIndex } = await createMatch();
+
+    await admin.from("matches").update({ question_count: 1 }).eq("id", matchId);
+
+    let lastResult;
+    for (const guestId of guests) {
+      lastResult = await admin.rpc("submit_answer", {
+        p_round_id: roundId,
+        p_guest_id: guestId,
+        p_answer_index: correctIndex,
+      });
+    }
+
+    expect(lastResult!.data?.[0]).toMatchObject({
       match_ended: true,
       next_round_id: null,
     });
@@ -278,7 +318,7 @@ describe("expire_round", () => {
     expect(data?.[0]).toMatchObject({ match_ended: false, next_round_id: null });
   });
 
-  it("advances to the next round once expired, with no winner recorded", async () => {
+  it("advances to the next round once expired even with nobody answering", async () => {
     const { result } = await formMatch("general_knowledge", 4);
 
     await admin
@@ -292,13 +332,56 @@ describe("expire_round", () => {
 
     const { data: round1 } = await admin
       .from("match_rounds")
-      .select("winner_guest_id")
+      .select("resolved_at")
       .eq("id", result.first_round_id)
       .single();
-    expect(round1?.winner_guest_id).toBeNull();
+    expect(round1?.resolved_at).not.toBeNull();
   });
 
-  it("is a no-op if the round was already claimed", async () => {
+  it("scores only the players who answered correctly before expiry, by speed", async () => {
+    const { guests, result } = await formMatch("general_knowledge", 4);
+    const { data: round } = await admin
+      .from("match_rounds")
+      .select("question_id")
+      .eq("id", result.first_round_id)
+      .single();
+    const { data: question } = await admin
+      .from("questions")
+      .select("correct_answer_index")
+      .eq("id", round!.question_id)
+      .single();
+    const correctIndex = question!.correct_answer_index as number;
+
+    await admin.rpc("submit_answer", {
+      p_round_id: result.first_round_id,
+      p_guest_id: guests[0],
+      p_answer_index: correctIndex,
+    });
+    await admin.rpc("submit_answer", {
+      p_round_id: result.first_round_id,
+      p_guest_id: guests[1],
+      p_answer_index: correctIndex,
+    });
+
+    await admin
+      .from("match_rounds")
+      .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", result.first_round_id);
+
+    await admin.rpc("expire_round", { p_round_id: result.first_round_id });
+
+    const { data: scores } = await admin
+      .from("match_results")
+      .select("player_id, score")
+      .eq("match_id", result.match_id);
+    const byPlayer = Object.fromEntries(scores!.map((s) => [s.player_id, s.score]));
+    expect(byPlayer[guests[0]]).toBe(10);
+    expect(byPlayer[guests[1]]).toBe(8);
+    expect(byPlayer[guests[2]]).toBe(0);
+    expect(byPlayer[guests[3]]).toBe(0);
+  });
+
+  it("is a no-op if the round was already resolved", async () => {
     const { guests, result } = await formMatch("general_knowledge", 4);
     const { data: round } = await admin
       .from("match_rounds")
@@ -311,11 +394,13 @@ describe("expire_round", () => {
       .eq("id", round!.question_id)
       .single();
 
-    await admin.rpc("submit_answer", {
-      p_round_id: result.first_round_id,
-      p_guest_id: guests[0],
-      p_answer_index: question!.correct_answer_index,
-    });
+    for (const guestId of guests) {
+      await admin.rpc("submit_answer", {
+        p_round_id: result.first_round_id,
+        p_guest_id: guestId,
+        p_answer_index: question!.correct_answer_index,
+      });
+    }
 
     await admin
       .from("match_rounds")

@@ -27,7 +27,7 @@ export type RoundInfo = {
   options: string[];
   startedAt: string;
   expiresAt: string;
-  winnerGuestId: string | null;
+  resolvedAt: string | null;
 };
 
 export async function getMatch(matchId: string): Promise<MatchInfo | null> {
@@ -79,7 +79,7 @@ export async function getCurrentRound(matchId: string): Promise<RoundInfo | null
 
   const { data, error } = await admin
     .from("match_rounds")
-    .select("id, match_id, round_number, question_text, options, started_at, expires_at, winner_guest_id")
+    .select("id, match_id, round_number, question_text, options, started_at, expires_at, resolved_at")
     .eq("match_id", matchId)
     .order("round_number", { ascending: false })
     .limit(1)
@@ -99,13 +99,13 @@ export async function getCurrentRound(matchId: string): Promise<RoundInfo | null
     options: data.options,
     startedAt: data.started_at,
     expiresAt: data.expires_at,
-    winnerGuestId: data.winner_guest_id,
+    resolvedAt: data.resolved_at,
   };
 }
 
 export type SubmitAnswerResult = {
   correct: boolean;
-  claimed: boolean;
+  recorded: boolean;
   matchEnded: boolean;
   nextRoundId: string | null;
 };
@@ -131,7 +131,7 @@ async function callSubmitAnswer(
 
   return {
     correct: Boolean(row?.correct),
-    claimed: Boolean(row?.claimed),
+    recorded: Boolean(row?.recorded),
     matchEnded: Boolean(row?.match_ended),
     nextRoundId: row?.next_round_id ?? null,
   };
@@ -176,7 +176,7 @@ export async function triggerBotMove(botPlayerId: string, roundId: string): Prom
 
   const { data: round, error: roundError } = await admin
     .from("match_rounds")
-    .select("question_id, options, winner_guest_id")
+    .select("question_id, options, resolved_at")
     .eq("id", roundId)
     .maybeSingle();
 
@@ -184,7 +184,7 @@ export async function triggerBotMove(botPlayerId: string, roundId: string): Prom
     throw new Error(`Failed to fetch round for bot move: ${roundError.message}`);
   }
 
-  if (!round || round.winner_guest_id) return;
+  if (!round || round.resolved_at) return;
 
   const { data: question, error: questionError } = await admin
     .from("questions")

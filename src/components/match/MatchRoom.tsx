@@ -22,7 +22,7 @@ type DbRoundRow = {
   options: string[];
   started_at: string;
   expires_at: string;
-  winner_guest_id: string | null;
+  resolved_at: string | null;
 };
 
 type DbMatchResultRow = {
@@ -46,7 +46,7 @@ function mapRound(row: DbRoundRow): RoundInfo {
     options: row.options,
     startedAt: row.started_at,
     expiresAt: row.expires_at,
-    winnerGuestId: row.winner_guest_id,
+    resolvedAt: row.resolved_at,
   };
 }
 
@@ -65,8 +65,9 @@ export function MatchRoom({
 }) {
   const [round, setRound] = useState<RoundInfo | null>(initialRound);
   const [participants, setParticipants] = useState<ParticipantInfo[]>(initialParticipants);
-  const [feedback, setFeedback] = useState<"correct" | "wrong" | "late" | null>(null);
+  const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [hasAnswered, setHasAnswered] = useState(false);
   const [matchEnded, setMatchEnded] = useState(false);
   const [timeLeftMs, setTimeLeftMs] = useState(() =>
     initialRound ? computeRemainingMs(initialRound.expiresAt, Date.now()) : 0
@@ -75,6 +76,13 @@ export function MatchRoom({
   const roundRef = useRef(round);
   const botTriggeredKeys = useRef(new Set<string>());
   const expireTriggeredRounds = useRef(new Set<string>());
+  const [seenRoundId, setSeenRoundId] = useState(round?.id ?? null);
+
+  if (round?.id !== seenRoundId) {
+    setSeenRoundId(round?.id ?? null);
+    setHasAnswered(false);
+    setFeedback(null);
+  }
 
   useEffect(() => {
     roundRef.current = round;
@@ -89,7 +97,7 @@ export function MatchRoom({
   }, [round]);
 
   useEffect(() => {
-    if (!round || round.winnerGuestId) return;
+    if (!round || round.resolvedAt) return;
     if (expireTriggeredRounds.current.has(round.id)) return;
     expireTriggeredRounds.current.add(round.id);
 
@@ -102,7 +110,7 @@ export function MatchRoom({
   }, [round]);
 
   useEffect(() => {
-    if (!round || round.winnerGuestId) return;
+    if (!round || round.resolvedAt) return;
 
     for (const participant of participants) {
       if (!participant.isBot) continue;
@@ -123,7 +131,6 @@ export function MatchRoom({
         { event: "INSERT", schema: "public", table: "match_rounds", filter: `match_id=eq.${matchId}` },
         (payload) => {
           setRound(mapRound(payload.new as DbRoundRow));
-          setFeedback(null);
         }
       )
       .on(
@@ -162,12 +169,16 @@ export function MatchRoom({
   }, [matchId]);
 
   async function handleAnswer(index: number) {
-    if (!round || submitting || matchEnded || round.winnerGuestId) return;
+    if (!round || submitting || matchEnded || hasAnswered || round.resolvedAt) return;
 
     setSubmitting(true);
     try {
       const result = await submitAnswer(round.id, index);
-      setFeedback(deriveFeedback(result));
+
+      if (result.recorded) {
+        setHasAnswered(true);
+        setFeedback(deriveFeedback(result));
+      }
 
       if (result.matchEnded) {
         setMatchEnded(true);
@@ -228,7 +239,7 @@ export function MatchRoom({
                 <button
                   key={index}
                   onClick={() => handleAnswer(index)}
-                  disabled={submitting || Boolean(round.winnerGuestId)}
+                  disabled={submitting || hasAnswered || Boolean(round.resolvedAt)}
                   className="rounded-xl border border-black/[.08] bg-white px-4 py-3 text-left transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:bg-zinc-900 dark:hover:bg-white/[.08]"
                 >
                   {option}
@@ -237,7 +248,9 @@ export function MatchRoom({
             </div>
             {feedback === "correct" && <p className="text-green-600">Correct!</p>}
             {feedback === "wrong" && <p className="text-red-600">Wrong</p>}
-            {feedback === "late" && <p className="text-zinc-500">Someone got it first</p>}
+            {hasAnswered && !round.resolvedAt && (
+              <p className="text-zinc-500">Waiting for other players…</p>
+            )}
           </>
         ) : (
           <p className="text-zinc-600 dark:text-zinc-400">Loading question…</p>
