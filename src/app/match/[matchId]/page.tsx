@@ -24,6 +24,7 @@ export default async function MatchPage({
       guestId={guestId}
       startedAt={match.startedAt}
       initialRound={round}
+      isBotMatch={match.isBotMatch}
     />
   );
 }

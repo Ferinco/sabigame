@@ -10,6 +10,7 @@ export type MatchInfo = {
   playerTwoId: string | null;
   startedAt: string;
   endedAt: string | null;
+  isBotMatch: boolean;
 };
 
 export type RoundInfo = {
@@ -26,7 +27,7 @@ export async function getMatch(matchId: string): Promise<MatchInfo | null> {
 
   const { data, error } = await admin
     .from("matches")
-    .select("id, category, player_1_id, player_2_id, started_at, ended_at")
+    .select("id, category, player_1_id, player_2_id, started_at, ended_at, is_bot_match")
     .eq("id", matchId)
     .maybeSingle();
 
@@ -43,6 +44,7 @@ export async function getMatch(matchId: string): Promise<MatchInfo | null> {
     playerTwoId: data.player_2_id,
     startedAt: data.started_at,
     endedAt: data.ended_at,
+    isBotMatch: data.is_bot_match,
   };
 }
 
@@ -80,11 +82,11 @@ export type SubmitAnswerResult = {
   nextRoundId: string | null;
 };
 
-export async function submitAnswer(
+async function callSubmitAnswer(
+  guestId: string,
   roundId: string,
   answerIndex: number
 ): Promise<SubmitAnswerResult> {
-  const guestId = await getGuestId();
   const admin = createAdminClient();
 
   const { data, error } = await admin.rpc("submit_answer", {
@@ -107,6 +109,74 @@ export async function submitAnswer(
   };
 }
 
+export async function submitAnswer(
+  roundId: string,
+  answerIndex: number
+): Promise<SubmitAnswerResult> {
+  const guestId = await getGuestId();
+  return callSubmitAnswer(guestId, roundId, answerIndex);
+}
+
 export async function getMyGuestId(): Promise<string> {
   return getGuestId();
+}
+
+const BOT_MIN_DELAY_MS = 1200;
+const BOT_MAX_DELAY_MS = 5500;
+const BOT_CORRECT_CHANCE = 0.55;
+
+export async function triggerBotMove(matchId: string, roundId: string): Promise<void> {
+  const admin = createAdminClient();
+
+  const { data: match, error: matchError } = await admin
+    .from("matches")
+    .select("player_2_id, is_bot_match")
+    .eq("id", matchId)
+    .maybeSingle();
+
+  if (matchError) {
+    throw new Error(`Failed to fetch match for bot move: ${matchError.message}`);
+  }
+
+  if (!match?.is_bot_match || !match.player_2_id) return;
+
+  const { data: round, error: roundError } = await admin
+    .from("match_rounds")
+    .select("question_id, options")
+    .eq("id", roundId)
+    .maybeSingle();
+
+  if (roundError) {
+    throw new Error(`Failed to fetch round for bot move: ${roundError.message}`);
+  }
+
+  if (!round) return;
+
+  const { data: question, error: questionError } = await admin
+    .from("questions")
+    .select("correct_answer_index")
+    .eq("id", round.question_id)
+    .maybeSingle();
+
+  if (questionError) {
+    throw new Error(`Failed to fetch question for bot move: ${questionError.message}`);
+  }
+
+  if (!question) return;
+
+  const delay =
+    BOT_MIN_DELAY_MS + Math.random() * (BOT_MAX_DELAY_MS - BOT_MIN_DELAY_MS);
+  await new Promise((resolve) => setTimeout(resolve, delay));
+
+  const correctIndex = question.correct_answer_index;
+  let answerIndex = correctIndex;
+
+  if (Math.random() >= BOT_CORRECT_CHANCE) {
+    const wrongIndices = round.options
+      .map((_: string, i: number) => i)
+      .filter((i: number) => i !== correctIndex);
+    answerIndex = wrongIndices[Math.floor(Math.random() * wrongIndices.length)];
+  }
+
+  await callSubmitAnswer(match.player_2_id, roundId, answerIndex);
 }

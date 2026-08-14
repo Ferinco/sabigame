@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { submitAnswer, type RoundInfo } from "@/lib/match/actions";
+import { submitAnswer, triggerBotMove, type RoundInfo } from "@/lib/match/actions";
 
 const MATCH_DURATION_MS = 15_000;
 
@@ -31,11 +31,13 @@ export function MatchRoom({
   guestId,
   startedAt,
   initialRound,
+  isBotMatch,
 }: {
   matchId: string;
   guestId: string;
   startedAt: string;
   initialRound: RoundInfo | null;
+  isBotMatch: boolean;
 }) {
   const [round, setRound] = useState<RoundInfo | null>(initialRound);
   const [wins, setWins] = useState(() => {
@@ -50,6 +52,7 @@ export function MatchRoom({
   const countedRounds = useRef(
     new Set<string>(initialRound?.winnerGuestId ? [initialRound.id] : [])
   );
+  const botTriggeredRounds = useRef(new Set<string>());
 
   useEffect(() => {
     const endsAt = new Date(startedAt).getTime() + MATCH_DURATION_MS;
@@ -63,6 +66,13 @@ export function MatchRoom({
     }, 250);
     return () => clearInterval(interval);
   }, [startedAt]);
+
+  useEffect(() => {
+    if (!isBotMatch || !round || round.winnerGuestId) return;
+    if (botTriggeredRounds.current.has(round.id)) return;
+    botTriggeredRounds.current.add(round.id);
+    triggerBotMove(matchId, round.id).catch(() => {});
+  }, [isBotMatch, matchId, round]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -157,7 +167,7 @@ export function MatchRoom({
         <div className="flex w-full items-center justify-between text-sm text-zinc-600 dark:text-zinc-400">
           <span>You: {wins.mine}</span>
           <span>{Math.ceil(timeLeftMs / 1000)}s</span>
-          <span>Opponent: {wins.opponent}</span>
+          <span>Opponent{isBotMatch ? " (bot)" : ""}: {wins.opponent}</span>
         </div>
 
         {round ? (

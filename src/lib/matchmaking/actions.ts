@@ -78,6 +78,21 @@ export async function checkMatchmakingStatus(): Promise<QueueStatus> {
   }
 
   if (queueEntry) {
+    const { data: botData, error: botError } = await admin.rpc(
+      "matchmaking_bot_fallback",
+      { p_guest_id: guestId }
+    );
+
+    if (botError) {
+      throw new Error(`Failed to run bot fallback: ${botError.message}`);
+    }
+
+    const botRow = botData?.[0];
+
+    if (botRow?.match_id) {
+      return { status: "matched", matchId: botRow.match_id };
+    }
+
     return { status: "waiting", joinedAt: queueEntry.joined_at };
   }
 
