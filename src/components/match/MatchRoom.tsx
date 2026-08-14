@@ -11,6 +11,7 @@ import {
 } from "@/lib/match/actions";
 import { computeRemainingMs } from "@/lib/match/countdown";
 import { deriveFeedback } from "@/lib/match/scoring";
+import { getBotName } from "@/lib/match/bot-names";
 
 const EXPIRE_CALL_BUFFER_MS = 300;
 
@@ -36,6 +37,12 @@ type DbMatchRow = {
   id: string;
   ended_at: string | null;
 };
+
+function displayName(p: ParticipantInfo, guestId: string): string {
+  if (p.playerId === guestId) return "You";
+  if (p.isBot) return getBotName(p.playerId);
+  return "Player";
+}
 
 function mapRound(row: DbRoundRow): RoundInfo {
   return {
@@ -202,7 +209,7 @@ export function MatchRoom({
                 className="flex items-center justify-between rounded-lg border border-black/[.08] bg-white px-4 py-2 dark:border-white/[.145] dark:bg-zinc-900"
               >
                 <span>
-                  {i + 1}. {p.playerId === guestId ? "You" : p.isBot ? "Bot" : "Player"}
+                  {i + 1}. {displayName(p, guestId)}
                 </span>
                 <span className="font-semibold">{p.score}</span>
               </li>
@@ -224,7 +231,7 @@ export function MatchRoom({
         <div className="flex w-full flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
           {participants.map((p) => (
             <span key={p.playerId}>
-              {p.playerId === guestId ? "You" : p.isBot ? "Bot" : "Player"}: {p.score}
+              {displayName(p, guestId)}: {p.score}
             </span>
           ))}
         </div>
