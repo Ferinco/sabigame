@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isCategory, type Category } from "@/lib/categories";
 
 export type JoinQueueResult =
-  | { status: "matched"; matchId: string; opponentId: string }
+  | { status: "matched"; matchId: string; opponentId: string; firstRoundId: string }
   | { status: "waiting" };
 
 export async function joinMatchmakingQueue(
@@ -30,7 +30,12 @@ export async function joinMatchmakingQueue(
   const row = data?.[0];
 
   if (row?.match_id) {
-    return { status: "matched", matchId: row.match_id, opponentId: row.opponent_id };
+    return {
+      status: "matched",
+      matchId: row.match_id,
+      opponentId: row.opponent_id,
+      firstRoundId: row.first_round_id,
+    };
   }
 
   return { status: "waiting" };
