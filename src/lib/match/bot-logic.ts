@@ -1,5 +1,5 @@
-export const BOT_MIN_DELAY_MS = 1200;
-export const BOT_MAX_DELAY_MS = 5500;
+export const BOT_MIN_DELAY_MS = 800;
+export const BOT_MAX_DELAY_MS = 4000;
 export const BOT_CORRECT_CHANCE = 0.55;
 
 export function pickBotDelayMs(rand: () => number = Math.random): number {

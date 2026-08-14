@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getGuestId } from "@/lib/guest/session";
-import { getMatch, getCurrentRound } from "@/lib/match/actions";
+import { getMatch, getCurrentRound, getParticipants } from "@/lib/match/actions";
 import { MatchRoom } from "@/components/match/MatchRoom";
 
 export default async function MatchPage({
@@ -17,14 +17,15 @@ export default async function MatchPage({
   }
 
   const round = await getCurrentRound(matchId);
+  const participants = await getParticipants(matchId);
 
   return (
     <MatchRoom
       matchId={matchId}
       guestId={guestId}
-      startedAt={match.startedAt}
+      questionCount={match.questionCount}
       initialRound={round}
-      isBotMatch={match.isBotMatch}
+      initialParticipants={participants}
     />
   );
 }

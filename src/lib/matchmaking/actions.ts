@@ -2,15 +2,13 @@
 
 import { getGuestId } from "@/lib/guest/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isCategory, type Category } from "@/lib/categories";
+import { isCategory } from "@/lib/categories";
 
 export type JoinQueueResult =
-  | { status: "matched"; matchId: string; opponentId: string; firstRoundId: string }
+  | { status: "matched"; matchId: string; firstRoundId: string }
   | { status: "waiting" };
 
-export async function joinMatchmakingQueue(
-  category: string
-): Promise<JoinQueueResult> {
+export async function joinMatchmakingQueue(category: string): Promise<JoinQueueResult> {
   if (!isCategory(category)) {
     throw new Error(`Invalid category: ${category}`);
   }
@@ -18,7 +16,7 @@ export async function joinMatchmakingQueue(
   const guestId = await getGuestId();
   const admin = createAdminClient();
 
-  const { data, error } = await admin.rpc("matchmaking_try_pair", {
+  const { data, error } = await admin.rpc("matchmaking_try_form_match", {
     p_guest_id: guestId,
     p_category: category,
   });
@@ -30,12 +28,7 @@ export async function joinMatchmakingQueue(
   const row = data?.[0];
 
   if (row?.match_id) {
-    return {
-      status: "matched",
-      matchId: row.match_id,
-      opponentId: row.opponent_id,
-      firstRoundId: row.first_round_id,
-    };
+    return { status: "matched", matchId: row.match_id, firstRoundId: row.first_round_id };
   }
 
   return { status: "waiting" };
@@ -50,21 +43,20 @@ export async function checkMatchmakingStatus(): Promise<QueueStatus> {
   const guestId = await getGuestId();
   const admin = createAdminClient();
 
-  const { data: match, error: matchError } = await admin
-    .from("matches")
-    .select("id, started_at")
-    .or(`player_1_id.eq.${guestId},player_2_id.eq.${guestId}`)
-    .is("ended_at", null)
-    .order("started_at", { ascending: false })
+  const { data: participant, error: participantError } = await admin
+    .from("match_results")
+    .select("match_id, matches!inner(ended_at)")
+    .eq("player_id", guestId)
+    .is("matches.ended_at", null)
     .limit(1)
     .maybeSingle();
 
-  if (matchError) {
-    throw new Error(`Failed to check match status: ${matchError.message}`);
+  if (participantError) {
+    throw new Error(`Failed to check match status: ${participantError.message}`);
   }
 
-  if (match) {
-    return { status: "matched", matchId: match.id };
+  if (participant) {
+    return { status: "matched", matchId: participant.match_id };
   }
 
   const { data: queueEntry, error: queueError } = await admin
@@ -78,10 +70,9 @@ export async function checkMatchmakingStatus(): Promise<QueueStatus> {
   }
 
   if (queueEntry) {
-    const { data: botData, error: botError } = await admin.rpc(
-      "matchmaking_bot_fallback",
-      { p_guest_id: guestId }
-    );
+    const { data: botData, error: botError } = await admin.rpc("matchmaking_bot_fallback", {
+      p_guest_id: guestId,
+    });
 
     if (botError) {
       throw new Error(`Failed to run bot fallback: ${botError.message}`);
@@ -103,14 +94,9 @@ export async function leaveMatchmakingQueue(): Promise<void> {
   const guestId = await getGuestId();
   const admin = createAdminClient();
 
-  const { error } = await admin
-    .from("matchmaking_queue")
-    .delete()
-    .eq("guest_id", guestId);
+  const { error } = await admin.from("matchmaking_queue").delete().eq("guest_id", guestId);
 
   if (error) {
     throw new Error(`Failed to leave matchmaking queue: ${error.message}`);
   }
 }
-
-export type { Category };

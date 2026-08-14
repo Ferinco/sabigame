@@ -2,26 +2,50 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { submitAnswer, triggerBotMove, type RoundInfo } from "@/lib/match/actions";
-import { computeRemainingMs, MATCH_DURATION_MS } from "@/lib/match/countdown";
-import { applyRoundWinner, deriveFeedback, initialWinCounts } from "@/lib/match/scoring";
+import {
+  submitAnswer,
+  triggerBotMove,
+  expireRound,
+  type RoundInfo,
+  type ParticipantInfo,
+} from "@/lib/match/actions";
+import { computeRemainingMs } from "@/lib/match/countdown";
+import { deriveFeedback } from "@/lib/match/scoring";
+
+const EXPIRE_CALL_BUFFER_MS = 300;
 
 type DbRoundRow = {
   id: string;
   match_id: string;
+  round_number: number;
   question_text: string;
   options: string[];
   started_at: string;
+  expires_at: string;
   winner_guest_id: string | null;
+};
+
+type DbMatchResultRow = {
+  match_id: string;
+  player_id: string;
+  is_bot: boolean;
+  score: number;
+};
+
+type DbMatchRow = {
+  id: string;
+  ended_at: string | null;
 };
 
 function mapRound(row: DbRoundRow): RoundInfo {
   return {
     id: row.id,
     matchId: row.match_id,
+    roundNumber: row.round_number,
     questionText: row.question_text,
     options: row.options,
     startedAt: row.started_at,
+    expiresAt: row.expires_at,
     winnerGuestId: row.winner_guest_id,
   };
 }
@@ -29,84 +53,105 @@ function mapRound(row: DbRoundRow): RoundInfo {
 export function MatchRoom({
   matchId,
   guestId,
-  startedAt,
+  questionCount,
   initialRound,
-  isBotMatch,
+  initialParticipants,
 }: {
   matchId: string;
   guestId: string;
-  startedAt: string;
+  questionCount: number;
   initialRound: RoundInfo | null;
-  isBotMatch: boolean;
+  initialParticipants: ParticipantInfo[];
 }) {
   const [round, setRound] = useState<RoundInfo | null>(initialRound);
-  const [wins, setWins] = useState(() =>
-    initialWinCounts(initialRound?.winnerGuestId, guestId)
-  );
+  const [participants, setParticipants] = useState<ParticipantInfo[]>(initialParticipants);
   const [feedback, setFeedback] = useState<"correct" | "wrong" | "late" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [matchEnded, setMatchEnded] = useState(false);
-  const [timeLeftMs, setTimeLeftMs] = useState(MATCH_DURATION_MS);
-  const countedRounds = useRef(
-    new Set<string>(initialRound?.winnerGuestId ? [initialRound.id] : [])
+  const [timeLeftMs, setTimeLeftMs] = useState(() =>
+    initialRound ? computeRemainingMs(initialRound.expiresAt, Date.now()) : 0
   );
-  const botTriggeredRounds = useRef(new Set<string>());
+
+  const roundRef = useRef(round);
+  const botTriggeredKeys = useRef(new Set<string>());
+  const expireTriggeredRounds = useRef(new Set<string>());
 
   useEffect(() => {
+    roundRef.current = round;
+  }, [round]);
+
+  useEffect(() => {
+    if (!round) return;
     const interval = setInterval(() => {
-      const remaining = computeRemainingMs(startedAt, Date.now());
-      setTimeLeftMs(remaining);
-      if (remaining <= 0) {
-        setMatchEnded(true);
-        clearInterval(interval);
-      }
+      setTimeLeftMs(computeRemainingMs(round.expiresAt, Date.now()));
     }, 250);
     return () => clearInterval(interval);
-  }, [startedAt]);
+  }, [round]);
 
   useEffect(() => {
-    if (!isBotMatch || !round || round.winnerGuestId) return;
-    if (botTriggeredRounds.current.has(round.id)) return;
-    botTriggeredRounds.current.add(round.id);
-    triggerBotMove(matchId, round.id).catch(() => {});
-  }, [isBotMatch, matchId, round]);
+    if (!round || round.winnerGuestId) return;
+    if (expireTriggeredRounds.current.has(round.id)) return;
+    expireTriggeredRounds.current.add(round.id);
+
+    const delay = computeRemainingMs(round.expiresAt, Date.now()) + EXPIRE_CALL_BUFFER_MS;
+    const timeout = setTimeout(() => {
+      expireRound(round.id).catch(() => {});
+    }, delay);
+
+    return () => clearTimeout(timeout);
+  }, [round]);
+
+  useEffect(() => {
+    if (!round || round.winnerGuestId) return;
+
+    for (const participant of participants) {
+      if (!participant.isBot) continue;
+      const key = `${round.id}:${participant.playerId}`;
+      if (botTriggeredKeys.current.has(key)) continue;
+      botTriggeredKeys.current.add(key);
+      triggerBotMove(participant.playerId, round.id).catch(() => {});
+    }
+  }, [round, participants]);
 
   useEffect(() => {
     const supabase = createClient();
 
-    function handleWinner(roundId: string, winnerGuestId: string | null) {
-      if (!winnerGuestId || countedRounds.current.has(roundId)) return;
-      countedRounds.current.add(roundId);
-      setWins((w) => applyRoundWinner(w, winnerGuestId, guestId));
-    }
-
     const channel = supabase
-      .channel(`match-rounds-${matchId}`)
+      .channel(`match-${matchId}`)
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "match_rounds",
-          filter: `match_id=eq.${matchId}`,
-        },
+        { event: "INSERT", schema: "public", table: "match_rounds", filter: `match_id=eq.${matchId}` },
         (payload) => {
-          const row = payload.new as DbRoundRow;
-          setRound(mapRound(row));
+          setRound(mapRound(payload.new as DbRoundRow));
           setFeedback(null);
         }
       )
       .on(
         "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "match_rounds",
-          filter: `match_id=eq.${matchId}`,
-        },
+        { event: "UPDATE", schema: "public", table: "match_rounds", filter: `match_id=eq.${matchId}` },
         (payload) => {
           const row = payload.new as DbRoundRow;
-          handleWinner(row.id, row.winner_guest_id);
+          if (roundRef.current && row.id === roundRef.current.id) {
+            setRound(mapRound(row));
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "match_results", filter: `match_id=eq.${matchId}` },
+        (payload) => {
+          const row = payload.new as DbMatchResultRow;
+          setParticipants((current) =>
+            current.map((p) => (p.playerId === row.player_id ? { ...p, score: row.score } : p))
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
+        (payload) => {
+          const row = payload.new as DbMatchRow;
+          if (row.ended_at) setMatchEnded(true);
         }
       )
       .subscribe();
@@ -114,7 +159,7 @@ export function MatchRoom({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [matchId, guestId]);
+  }, [matchId]);
 
   async function handleAnswer(index: number) {
     if (!round || submitting || matchEnded || round.winnerGuestId) return;
@@ -133,15 +178,25 @@ export function MatchRoom({
   }
 
   if (matchEnded) {
+    const ranked = [...participants].sort((a, b) => b.score - a.score);
+
     return (
       <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-black">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <h1 className="text-2xl font-bold text-black dark:text-zinc-50">
-            Match ended
-          </h1>
-          <p className="text-lg text-zinc-600 dark:text-zinc-400">
-            You: {wins.mine} — Opponent: {wins.opponent}
-          </p>
+        <div className="flex w-full max-w-sm flex-col items-center gap-6">
+          <h1 className="text-2xl font-bold text-black dark:text-zinc-50">Match ended</h1>
+          <ol className="flex w-full flex-col gap-2">
+            {ranked.map((p, i) => (
+              <li
+                key={p.playerId}
+                className="flex items-center justify-between rounded-lg border border-black/[.08] bg-white px-4 py-2 dark:border-white/[.145] dark:bg-zinc-900"
+              >
+                <span>
+                  {i + 1}. {p.playerId === guestId ? "You" : p.isBot ? "Bot" : "Player"}
+                </span>
+                <span className="font-semibold">{p.score}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     );
@@ -151,9 +206,16 @@ export function MatchRoom({
     <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-12 dark:bg-black">
       <div className="flex w-full max-w-md flex-col items-center gap-6">
         <div className="flex w-full items-center justify-between text-sm text-zinc-600 dark:text-zinc-400">
-          <span>You: {wins.mine}</span>
+          <span>Question {round ? round.roundNumber : "-"} / {questionCount}</span>
           <span>{Math.ceil(timeLeftMs / 1000)}s</span>
-          <span>Opponent{isBotMatch ? " (bot)" : ""}: {wins.opponent}</span>
+        </div>
+
+        <div className="flex w-full flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+          {participants.map((p) => (
+            <span key={p.playerId}>
+              {p.playerId === guestId ? "You" : p.isBot ? "Bot" : "Player"}: {p.score}
+            </span>
+          ))}
         </div>
 
         {round ? (
@@ -173,13 +235,9 @@ export function MatchRoom({
                 </button>
               ))}
             </div>
-            {feedback === "correct" && (
-              <p className="text-green-600">Correct!</p>
-            )}
+            {feedback === "correct" && <p className="text-green-600">Correct!</p>}
             {feedback === "wrong" && <p className="text-red-600">Wrong</p>}
-            {feedback === "late" && (
-              <p className="text-zinc-500">Opponent got it first</p>
-            )}
+            {feedback === "late" && <p className="text-zinc-500">Someone got it first</p>}
           </>
         ) : (
           <p className="text-zinc-600 dark:text-zinc-400">Loading question…</p>

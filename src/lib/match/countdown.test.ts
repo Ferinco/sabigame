@@ -1,33 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { computeRemainingMs, MATCH_DURATION_MS } from "./countdown";
+import { computeRemainingMs } from "./countdown";
 
 describe("computeRemainingMs", () => {
-  it("returns the full duration right at start", () => {
-    const startedAt = "2026-01-01T00:00:00.000Z";
-    const now = new Date(startedAt).getTime();
-    expect(computeRemainingMs(startedAt, now)).toBe(MATCH_DURATION_MS);
+  it("returns the full remaining time right at start", () => {
+    const expiresAt = "2026-01-01T00:00:05.000Z";
+    const now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    expect(computeRemainingMs(expiresAt, now)).toBe(5_000);
   });
 
   it("counts down as time passes", () => {
-    const startedAt = "2026-01-01T00:00:00.000Z";
-    const now = new Date(startedAt).getTime() + 5_000;
-    expect(computeRemainingMs(startedAt, now)).toBe(MATCH_DURATION_MS - 5_000);
+    const expiresAt = "2026-01-01T00:00:05.000Z";
+    const now = new Date("2026-01-01T00:00:02.000Z").getTime();
+    expect(computeRemainingMs(expiresAt, now)).toBe(3_000);
   });
 
-  it("never goes negative once the duration has elapsed", () => {
-    const startedAt = "2026-01-01T00:00:00.000Z";
-    const now = new Date(startedAt).getTime() + MATCH_DURATION_MS + 60_000;
-    expect(computeRemainingMs(startedAt, now)).toBe(0);
+  it("never goes negative once expired", () => {
+    const expiresAt = "2026-01-01T00:00:05.000Z";
+    const now = new Date("2026-01-01T00:00:10.000Z").getTime();
+    expect(computeRemainingMs(expiresAt, now)).toBe(0);
   });
 
-  it("returns 0 immediately if startedAt is already far in the past", () => {
-    const startedAt = "2020-01-01T00:00:00.000Z";
-    expect(computeRemainingMs(startedAt, Date.now())).toBe(0);
+  it("returns 0 immediately if expiresAt is already far in the past", () => {
+    const expiresAt = "2020-01-01T00:00:00.000Z";
+    expect(computeRemainingMs(expiresAt, Date.now())).toBe(0);
   });
 
   it("handles microsecond-precision Postgres timestamps", () => {
-    const startedAt = "2026-01-01T00:00:00.051273+00:00";
+    const expiresAt = "2026-01-01T00:00:05.051273+00:00";
     const now = new Date("2026-01-01T00:00:00.051273Z").getTime();
-    expect(computeRemainingMs(startedAt, now)).toBe(MATCH_DURATION_MS);
+    expect(computeRemainingMs(expiresAt, now)).toBe(5_000);
   });
 });
