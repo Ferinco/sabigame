@@ -2,6 +2,7 @@
 
 import { getGuestId } from "@/lib/guest/session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { pickBotAnswerIndex, pickBotDelayMs } from "@/lib/match/bot-logic";
 
 export type MatchInfo = {
   id: string;
@@ -121,10 +122,6 @@ export async function getMyGuestId(): Promise<string> {
   return getGuestId();
 }
 
-const BOT_MIN_DELAY_MS = 1200;
-const BOT_MAX_DELAY_MS = 5500;
-const BOT_CORRECT_CHANCE = 0.55;
-
 export async function triggerBotMove(matchId: string, roundId: string): Promise<void> {
   const admin = createAdminClient();
 
@@ -164,19 +161,12 @@ export async function triggerBotMove(matchId: string, roundId: string): Promise<
 
   if (!question) return;
 
-  const delay =
-    BOT_MIN_DELAY_MS + Math.random() * (BOT_MAX_DELAY_MS - BOT_MIN_DELAY_MS);
-  await new Promise((resolve) => setTimeout(resolve, delay));
+  await new Promise((resolve) => setTimeout(resolve, pickBotDelayMs()));
 
-  const correctIndex = question.correct_answer_index;
-  let answerIndex = correctIndex;
-
-  if (Math.random() >= BOT_CORRECT_CHANCE) {
-    const wrongIndices = round.options
-      .map((_: string, i: number) => i)
-      .filter((i: number) => i !== correctIndex);
-    answerIndex = wrongIndices[Math.floor(Math.random() * wrongIndices.length)];
-  }
+  const answerIndex = pickBotAnswerIndex(
+    question.correct_answer_index,
+    round.options.length
+  );
 
   await callSubmitAnswer(match.player_2_id, roundId, answerIndex);
 }

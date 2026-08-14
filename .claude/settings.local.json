@@ -14,7 +14,8 @@
       "Bash(curl -s -c /tmp/sabigame-cookies.txt -o /tmp/sabigame-match.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/match/2760fb67-4345-48aa-ae82-3542f5c92276)",
       "Bash(python3 *)",
       "Bash(grep -o \"You: .\\\\{0,20\\\\}\" /tmp/x.html)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(lsof *)"
     ]
   }
 }

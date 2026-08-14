@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { submitAnswer, triggerBotMove, type RoundInfo } from "@/lib/match/actions";
-
-const MATCH_DURATION_MS = 15_000;
+import { computeRemainingMs, MATCH_DURATION_MS } from "@/lib/match/countdown";
+import { applyRoundWinner, deriveFeedback, initialWinCounts } from "@/lib/match/scoring";
 
 type DbRoundRow = {
   id: string;
@@ -40,11 +40,9 @@ export function MatchRoom({
   isBotMatch: boolean;
 }) {
   const [round, setRound] = useState<RoundInfo | null>(initialRound);
-  const [wins, setWins] = useState(() => {
-    if (initialRound?.winnerGuestId === guestId) return { mine: 1, opponent: 0 };
-    if (initialRound?.winnerGuestId) return { mine: 0, opponent: 1 };
-    return { mine: 0, opponent: 0 };
-  });
+  const [wins, setWins] = useState(() =>
+    initialWinCounts(initialRound?.winnerGuestId, guestId)
+  );
   const [feedback, setFeedback] = useState<"correct" | "wrong" | "late" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [matchEnded, setMatchEnded] = useState(false);
@@ -55,9 +53,8 @@ export function MatchRoom({
   const botTriggeredRounds = useRef(new Set<string>());
 
   useEffect(() => {
-    const endsAt = new Date(startedAt).getTime() + MATCH_DURATION_MS;
     const interval = setInterval(() => {
-      const remaining = Math.max(0, endsAt - Date.now());
+      const remaining = computeRemainingMs(startedAt, Date.now());
       setTimeLeftMs(remaining);
       if (remaining <= 0) {
         setMatchEnded(true);
@@ -80,11 +77,7 @@ export function MatchRoom({
     function handleWinner(roundId: string, winnerGuestId: string | null) {
       if (!winnerGuestId || countedRounds.current.has(roundId)) return;
       countedRounds.current.add(roundId);
-      setWins((w) =>
-        winnerGuestId === guestId
-          ? { ...w, mine: w.mine + 1 }
-          : { ...w, opponent: w.opponent + 1 }
-      );
+      setWins((w) => applyRoundWinner(w, winnerGuestId, guestId));
     }
 
     const channel = supabase
@@ -129,14 +122,7 @@ export function MatchRoom({
     setSubmitting(true);
     try {
       const result = await submitAnswer(round.id, index);
-
-      if (result.correct && result.claimed) {
-        setFeedback("correct");
-      } else if (!result.correct) {
-        setFeedback("wrong");
-      } else {
-        setFeedback("late");
-      }
+      setFeedback(deriveFeedback(result));
 
       if (result.matchEnded) {
         setMatchEnded(true);
