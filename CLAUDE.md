@@ -124,5 +124,6 @@ Nothing else (result screen polish/rematch button, auth/score-locking, leaderboa
 ## Repo / workflow
 
 - GitHub: https://github.com/Ferinco/sabigame.git
-- Push after each change (commit + push to `main` once a change is complete and verified).
+- Do NOT push to `main` without the user reviewing first. Commit locally once a change is complete and verified, then stop and let the user review — wait for explicit go-ahead before `git push`.
+- No `Co-Authored-By: Claude` (or similar AI-attribution) trailer on commit messages.
 
