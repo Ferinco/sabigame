@@ -15,7 +15,8 @@
       "Bash(python3 *)",
       "Bash(grep -o \"You: .\\\\{0,20\\\\}\" /tmp/x.html)",
       "Bash(git add *)",
-      "Bash(lsof *)"
+      "Bash(lsof *)",
+      "Bash(git commit *)"
     ]
   }
 }

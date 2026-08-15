@@ -39,3 +39,18 @@ export async function setGuestNickname(
     throw new Error(`Failed to set guest nickname: ${error.message}`);
   }
 }
+
+export async function getGuestNickname(guestId: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("guest_sessions")
+    .select("nickname")
+    .eq("anonymous_id", guestId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch guest nickname: ${error.message}`);
+  }
+
+  return data?.nickname ?? null;
+}
