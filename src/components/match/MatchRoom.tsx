@@ -41,7 +41,7 @@ type DbMatchRow = {
 function displayName(p: ParticipantInfo, guestId: string): string {
   if (p.playerId === guestId) return "You";
   if (p.isBot) return getBotName(p.playerId);
-  return "Player";
+  return p.nickname ?? "Player";
 }
 
 function mapRound(row: DbRoundRow): RoundInfo {

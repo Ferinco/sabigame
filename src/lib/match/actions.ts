@@ -17,6 +17,7 @@ export type ParticipantInfo = {
   playerId: string;
   isBot: boolean;
   score: number;
+  nickname: string | null;
 };
 
 export type RoundInfo = {
@@ -67,10 +68,31 @@ export async function getParticipants(matchId: string): Promise<ParticipantInfo[
     throw new Error(`Failed to fetch participants: ${error.message}`);
   }
 
-  return (data ?? []).map((row) => ({
+  const rows = data ?? [];
+  const humanIds = rows.filter((row) => !row.is_bot).map((row) => row.player_id);
+
+  const nicknamesByPlayerId: Record<string, string | null> = {};
+
+  if (humanIds.length > 0) {
+    const { data: sessions, error: sessionsError } = await admin
+      .from("guest_sessions")
+      .select("anonymous_id, nickname")
+      .in("anonymous_id", humanIds);
+
+    if (sessionsError) {
+      throw new Error(`Failed to fetch participant nicknames: ${sessionsError.message}`);
+    }
+
+    for (const session of sessions ?? []) {
+      nicknamesByPlayerId[session.anonymous_id] = session.nickname;
+    }
+  }
+
+  return rows.map((row) => ({
     playerId: row.player_id,
     isBot: row.is_bot,
     score: row.score,
+    nickname: row.is_bot ? null : nicknamesByPlayerId[row.player_id] ?? null,
   }));
 }
 
