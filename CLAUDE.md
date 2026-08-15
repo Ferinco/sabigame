@@ -29,7 +29,9 @@ Full product spec: see `SPEC.md` (source of truth for flow, data model, and buil
 
 - `src/lib/guest/constants.ts` — cookie name (`sabigame_guest_id`), header name (`x-sabigame-guest-id`), cookie max-age
 - `src/proxy.ts` — Next 16's proxy (formerly `middleware.ts`; must live inside `src/` when using a `src/app` layout — root-level placement is silently ignored). Reads/generates the guest ID, stamps it onto a cloned request header (the documented way to pass data from proxy into render — cookie-mutation tricks don't reliably propagate to the same-request render), sets the persistent cookie on the response for new guests, and calls `refreshSupabaseSession`
-- `src/lib/guest/session.ts` — server-only helpers: `getGuestId()` (reads the `x-sabigame-guest-id` header set by proxy), `ensureGuestSession(guestId)` (upserts a `guest_sessions` row, no-op if it exists — called from root layout on every request), `setGuestNickname(guestId, nickname)` (not wired to UI yet — landing page nickname form is future work)
+- `src/lib/guest/session.ts` — server-only helpers: `getGuestId()` (reads the `x-sabigame-guest-id` header set by proxy), `ensureGuestSession(guestId)` (upserts a `guest_sessions` row, no-op if it exists — called from root layout on every request), `setGuestNickname(guestId, nickname)` / `getGuestNickname(guestId)`
+- `src/lib/guest/nickname.ts` — pure `validateNickname(raw)` (non-empty, trimmed, 20 char max), used by `src/lib/guest/actions.ts`'s `submitNickname` Server Action so the validation itself is unit-testable without a request context
+- `src/app/page.tsx` — Server Component: fetches `getGuestNickname`, passes it to `src/components/Landing.tsx` (Client Component) as `initialNickname`. Landing is two-stage: nickname form (Continue disabled until non-empty) → category picker, matching the SPEC's core flow. A guest who already has a saved nickname skips straight to the category picker, with a "change" link back to the form.
 - `supabase/migrations/20260814000000_create_guest_sessions.sql` — `guest_sessions` table, RLS on with zero anon/authenticated policies (guests aren't Supabase Auth users, so writes only ever go through the service-role client server-side)
 
 ## Matchmaking, real-time loop, and bot fallback — the 4-player redesign
@@ -102,7 +104,9 @@ Verified end-to-end against the live project (via direct RPC calls and a product
 
 31 automated tests now cover this (16 unit + 14 integration — the unit count actually dropped slightly since the multi-scorer change removed a "late" feedback state that had its own test), all passing on a clean DB state.
 
-Nothing else (result screen polish/rematch button, auth/score-locking, leaderboard) has been built yet. There's no nickname UI. The ranked result screen exists (sorts `match_results` by score) but has no "Rematch"/"New Match" buttons yet — that's still step 7 territory, this redesign only rebuilt the minimum needed to not leave the match-end UI broken for N players. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
+Nickname entry is now gated before matchmaking (landing page). Bots show random display names (`src/lib/match/bot-names.ts`) instead of a generic "Bot" label — but note nicknames aren't wired into the in-match scoreboard/result screen yet, which still show "Player" for real opponents (only "You" and bot names are personalized so far).
+
+Nothing else (result screen polish/rematch button, auth/score-locking, leaderboard) has been built yet. The ranked result screen exists (sorts `match_results` by score) but has no "Rematch"/"New Match" buttons yet — that's still step 7 territory, this redesign only rebuilt the minimum needed to not leave the match-end UI broken for N players. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
 ## Scope discipline (v1)
 
