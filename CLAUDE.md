@@ -90,7 +90,7 @@ The 4-player/per-question-countdown redesign fixes this structurally rather than
 
 ## Current state
 
-Steps 1-8 of the SPEC.md build order are done:
+All 9 steps of the SPEC.md build order have a first pass done:
 1. Project scaffolding + Supabase client wiring.
 2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table; `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge).
 3. Guest session handling — see above.
@@ -99,6 +99,7 @@ Steps 1-8 of the SPEC.md build order are done:
 6. Bot fallback — see above.
 7. Result screen + new-match loop — ranked list, "New Match" button (no rematch, by design).
 8. "Lock score" flow — magic link only so far, see below. Not yet verified end-to-end (needs a manual Supabase dashboard step + a real email click-through).
+9. Global leaderboard — see below.
 
 Steps 4-5-6 were reworked twice: first from strict 1v1 to up to 4 players per match with per-question countdowns and a fixed question count (10) instead of a match-wide 15s clock, then again from single-winner-takes-all to every-correct-answer-scores with a 10/8/7/6 speed ranking. See the "4-player redesign" and "Multi-scorer questions" sections above for the full data model and RPC rundown.
 
@@ -124,7 +125,17 @@ The result screen has a "New Match" button (no "Rematch" — deliberately skippe
 
 **Manual step required, not yet verified end-to-end**: the actual magic-link email round trip needs `http://localhost:3000/auth/callback` (and the eventual production domain) added to Supabase's Authentication → URL Configuration → Redirect URLs allowlist, or `exchangeCodeForSession` will reject the callback. This is dashboard config, not something a migration can set. I verified the DB-level lock operation directly (UPDATE correctness, row targeting, `getParticipants` not crashing on a locked row with no matching `guest_sessions` entry) and the identity-resolution/matchEnded fixes via a production-build smoke test with a real matching guest cookie, but have not personally clicked a real magic-link email — no inbox access. Test this specific path yourself before considering it done.
 
-Nothing else (leaderboard, Google OAuth) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
+## Global leaderboard (step 9)
+
+Building this surfaced a real gap in the lock-score migration: once `match_results.player_id` becomes the auth user's UUID, there's no way back to `guest_sessions.nickname` (keyed by the old guest UUID) — the connection is lost the moment `lockMatchScore` overwrites `player_id`. Fixed at the source rather than working around it on the leaderboard: `20260820000000_leaderboard.sql` adds a `profiles` table (`id` FK'd to `auth.users`, `nickname`), and `lockMatchScore` now upserts into it (copying the guest's current nickname) as part of the same lock operation, before migrating `match_results`.
+
+- `public.leaderboard` — a Postgres view, not a table: `SUM(score)` / `COUNT(DISTINCT match_id)` from `match_results` grouped by `player_id`, filtered to `is_locked = true`, joined against `profiles` for the nickname. Queried via the admin client same as everything else server-side (service role bypasses RLS regardless, so no `security_invoker` concerns for our access pattern).
+- `src/lib/leaderboard/actions.ts` — `getLeaderboard(limit = 50)`, straight `.from("leaderboard").select(...).order("total_score", { ascending: false })`.
+- `src/app/leaderboard/page.tsx` — Server Component, ranked list, "no locked scores yet" empty state. Linked from the landing page footer.
+
+Verified: `profiles.id`'s FK to `auth.users` is genuinely enforced (a fabricated UUID insert was rejected with `23503`, confirming a fake profile can't silently exist without a real signup behind it), and the `leaderboard` view queries cleanly with zero rows (no error on an empty join). Did not run a full create-real-user-then-lock-then-check-leaderboard round trip this session — the DB-level lock UPDATE itself was already verified in the previous commit, and the FK/view mechanics are simple enough that this felt like adequate coverage without spinning up a throwaway auth user.
+
+Nothing else (Google OAuth) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
 ## Scope discipline (v1)
 

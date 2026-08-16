@@ -8,6 +8,24 @@ export async function lockMatchScore(
 ): Promise<void> {
   const admin = createAdminClient();
 
+  const { data: session, error: sessionError } = await admin
+    .from("guest_sessions")
+    .select("nickname")
+    .eq("anonymous_id", guestId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(`Failed to fetch guest nickname for lock: ${sessionError.message}`);
+  }
+
+  const { error: profileError } = await admin
+    .from("profiles")
+    .upsert({ id: userId, nickname: session?.nickname ?? null }, { onConflict: "id" });
+
+  if (profileError) {
+    throw new Error(`Failed to upsert profile: ${profileError.message}`);
+  }
+
   const { error } = await admin
     .from("match_results")
     .update({ player_id: userId, is_locked: true })

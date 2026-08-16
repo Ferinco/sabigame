@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   joinMatchmakingQueue,
   checkMatchmakingStatus,
@@ -141,6 +142,10 @@ export function Landing({ initialNickname }: { initialNickname: string | null })
         )}
 
         {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <Link href="/leaderboard" className="text-sm underline text-zinc-600 dark:text-zinc-400">
+          Leaderboard
+        </Link>
       </main>
     </div>
   );
