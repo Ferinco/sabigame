@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   submitAnswer,
@@ -70,6 +71,7 @@ export function MatchRoom({
   initialRound: RoundInfo | null;
   initialParticipants: ParticipantInfo[];
 }) {
+  const router = useRouter();
   const [round, setRound] = useState<RoundInfo | null>(initialRound);
   const [participants, setParticipants] = useState<ParticipantInfo[]>(initialParticipants);
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
@@ -215,6 +217,15 @@ export function MatchRoom({
               </li>
             ))}
           </ol>
+          <button
+            onClick={() => {
+              router.push("/");
+              router.refresh();
+            }}
+            className="w-full rounded-full bg-foreground px-5 py-3 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+          >
+            New Match
+          </button>
         </div>
       </div>
     );

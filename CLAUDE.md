@@ -106,7 +106,9 @@ Verified end-to-end against the live project (via direct RPC calls and a product
 
 Nickname entry is now gated before matchmaking (landing page). Bots show random display names (`src/lib/match/bot-names.ts`). Real opponents' nicknames now show in-match too — `getParticipants` (`src/lib/match/actions.ts`) does a second query against `guest_sessions` for the non-bot player IDs and merges nicknames into `ParticipantInfo`, falling back to "Player" if a participant somehow doesn't have one set (e.g. old data from before nickname entry was required). No FK exists between `match_results.player_id` and `guest_sessions.anonymous_id` (player_id can be a bot's synthetic UUID, which never gets a `guest_sessions` row), so this is two separate queries merged in JS, not a PostgREST embedded-resource join.
 
-Nothing else (result screen polish/rematch button, auth/score-locking, leaderboard) has been built yet. The ranked result screen exists (sorts `match_results` by score) but has no "Rematch"/"New Match" buttons yet — that's still step 7 territory, this redesign only rebuilt the minimum needed to not leave the match-end UI broken for N players. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
+The result screen has a "New Match" button (no "Rematch" — deliberately skipped, not a fit for this game per product call). It routes to `/` and calls `router.refresh()` right after `router.push()`, forcing a fresh server fetch of `getGuestNickname` rather than risking a stale client-router-cache snapshot of the landing page — since the nickname's already saved, this sends the player straight to the category picker, not back through the nickname form.
+
+Nothing else (auth/score-locking, leaderboard) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
 ## Scope discipline (v1)
 
@@ -124,6 +126,6 @@ Nothing else (result screen polish/rematch button, auth/score-locking, leaderboa
 ## Repo / workflow
 
 - GitHub: https://github.com/Ferinco/sabigame.git
-- Do NOT push to `main` without the user reviewing first. Commit locally once a change is complete and verified, then stop and let the user review — wait for explicit go-ahead before `git push`.
+- Do NOT commit or push without the user reviewing first. Finish a change, verify it (typecheck/lint/build/tests), then stop and let the user review the diff — wait for explicit go-ahead, then `git commit` and `git push` together.
 - No `Co-Authored-By: Claude` (or similar AI-attribution) trailer on commit messages.
 
