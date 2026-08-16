@@ -2,6 +2,7 @@
 
 import { getGuestId } from "@/lib/guest/session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 import { pickBotAnswerIndex, pickBotDelayMs } from "@/lib/match/bot-logic";
 
 export type MatchInfo = {
@@ -18,6 +19,7 @@ export type ParticipantInfo = {
   isBot: boolean;
   score: number;
   nickname: string | null;
+  isLocked: boolean;
 };
 
 export type RoundInfo = {
@@ -61,7 +63,7 @@ export async function getParticipants(matchId: string): Promise<ParticipantInfo[
 
   const { data, error } = await admin
     .from("match_results")
-    .select("player_id, is_bot, score")
+    .select("player_id, is_bot, score, is_locked")
     .eq("match_id", matchId);
 
   if (error) {
@@ -93,7 +95,31 @@ export async function getParticipants(matchId: string): Promise<ParticipantInfo[
     isBot: row.is_bot,
     score: row.score,
     nickname: row.is_bot ? null : nicknamesByPlayerId[row.player_id] ?? null,
+    isLocked: row.is_locked,
   }));
+}
+
+export async function getMyParticipantId(matchId: string): Promise<string> {
+  const guestId = await getGuestId();
+  const supabase = await createServerClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("match_results")
+      .select("player_id")
+      .eq("match_id", matchId)
+      .eq("player_id", user.id)
+      .maybeSingle();
+
+    if (data) return user.id;
+  }
+
+  return guestId;
 }
 
 export async function getCurrentRound(matchId: string): Promise<RoundInfo | null> {

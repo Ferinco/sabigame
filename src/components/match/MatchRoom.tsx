@@ -32,6 +32,7 @@ type DbMatchResultRow = {
   player_id: string;
   is_bot: boolean;
   score: number;
+  is_locked: boolean;
 };
 
 type DbMatchRow = {
@@ -64,12 +65,14 @@ export function MatchRoom({
   questionCount,
   initialRound,
   initialParticipants,
+  initialMatchEnded,
 }: {
   matchId: string;
   guestId: string;
   questionCount: number;
   initialRound: RoundInfo | null;
   initialParticipants: ParticipantInfo[];
+  initialMatchEnded: boolean;
 }) {
   const router = useRouter();
   const [round, setRound] = useState<RoundInfo | null>(initialRound);
@@ -77,7 +80,10 @@ export function MatchRoom({
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [hasAnswered, setHasAnswered] = useState(false);
-  const [matchEnded, setMatchEnded] = useState(false);
+  const [matchEnded, setMatchEnded] = useState(initialMatchEnded);
+  const [lockEmail, setLockEmail] = useState("");
+  const [lockStatus, setLockStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [lockError, setLockError] = useState<string | null>(null);
   const [timeLeftMs, setTimeLeftMs] = useState(() =>
     initialRound ? computeRemainingMs(initialRound.expiresAt, Date.now()) : 0
   );
@@ -158,7 +164,11 @@ export function MatchRoom({
         (payload) => {
           const row = payload.new as DbMatchResultRow;
           setParticipants((current) =>
-            current.map((p) => (p.playerId === row.player_id ? { ...p, score: row.score } : p))
+            current.map((p) =>
+              p.playerId === row.player_id
+                ? { ...p, score: row.score, isLocked: row.is_locked }
+                : p
+            )
           );
         }
       )
@@ -199,6 +209,34 @@ export function MatchRoom({
 
   if (matchEnded) {
     const ranked = [...participants].sort((a, b) => b.score - a.score);
+    const me = participants.find((p) => p.playerId === guestId);
+
+    async function handleLockSubmit(e: React.FormEvent) {
+      e.preventDefault();
+      setLockError(null);
+      setLockStatus("sending");
+
+      try {
+        const supabase = createClient();
+        const { error } = await supabase.auth.signInWithOtp({
+          email: lockEmail,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback?matchId=${matchId}`,
+          },
+        });
+
+        if (error) {
+          setLockStatus("error");
+          setLockError(error.message);
+          return;
+        }
+
+        setLockStatus("sent");
+      } catch (err) {
+        setLockStatus("error");
+        setLockError(err instanceof Error ? err.message : "Something went wrong");
+      }
+    }
 
     return (
       <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-black">
@@ -212,11 +250,38 @@ export function MatchRoom({
               >
                 <span>
                   {i + 1}. {displayName(p, guestId)}
+                  {p.isLocked && " 🔒"}
                 </span>
                 <span className="font-semibold">{p.score}</span>
               </li>
             ))}
           </ol>
+
+          {me && !me.isBot && !me.isLocked && lockStatus !== "sent" && (
+            <form onSubmit={handleLockSubmit} className="flex w-full flex-col gap-3">
+              <input
+                type="email"
+                value={lockEmail}
+                onChange={(e) => setLockEmail(e.target.value)}
+                placeholder="Email for magic link"
+                required
+                className="w-full rounded-full border border-black/[.08] bg-white px-5 py-3 text-black outline-none focus:border-black/[.24] dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-white/[.3]"
+              />
+              <button
+                type="submit"
+                disabled={lockStatus === "sending"}
+                className="w-full rounded-full border border-black/[.08] px-5 py-3 text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.08]"
+              >
+                Lock this score & join global ranking
+              </button>
+              {lockError && <p className="text-sm text-red-600">{lockError}</p>}
+            </form>
+          )}
+
+          {lockStatus === "sent" && (
+            <p className="text-sm text-zinc-500">Check your email for a magic link to lock this score.</p>
+          )}
+
           <button
             onClick={() => {
               router.push("/");

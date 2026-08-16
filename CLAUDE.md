@@ -90,13 +90,15 @@ The 4-player/per-question-countdown redesign fixes this structurally rather than
 
 ## Current state
 
-Steps 1-6 of the SPEC.md build order are done:
+Steps 1-8 of the SPEC.md build order are done:
 1. Project scaffolding + Supabase client wiring.
 2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table; `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge).
 3. Guest session handling — see above.
 4. Matchmaking queue — see above.
 5. Real-time match loop — see above.
 6. Bot fallback — see above.
+7. Result screen + new-match loop — ranked list, "New Match" button (no rematch, by design).
+8. "Lock score" flow — magic link only so far, see below. Not yet verified end-to-end (needs a manual Supabase dashboard step + a real email click-through).
 
 Steps 4-5-6 were reworked twice: first from strict 1v1 to up to 4 players per match with per-question countdowns and a fixed question count (10) instead of a match-wide 15s clock, then again from single-winner-takes-all to every-correct-answer-scores with a 10/8/7/6 speed ranking. See the "4-player redesign" and "Multi-scorer questions" sections above for the full data model and RPC rundown.
 
@@ -108,7 +110,21 @@ Nickname entry is now gated before matchmaking (landing page). Bots show random 
 
 The result screen has a "New Match" button (no "Rematch" — deliberately skipped, not a fit for this game per product call). It routes to `/` and calls `router.refresh()` right after `router.push()`, forcing a fresh server fetch of `getGuestNickname` rather than risking a stale client-router-cache snapshot of the landing page — since the nickname's already saved, this sends the player straight to the category picker, not back through the nickname form.
 
-Nothing else (auth/score-locking, leaderboard) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
+## Score locking (step 8) — magic link only, no Google OAuth yet
+
+"Lock this score & join global ranking" appears on the result screen for the guest's own row, once the match has ended and that row isn't already locked. Google OAuth was skipped for now — it needs a Google Cloud OAuth app registered by the user in the Supabase dashboard, an external manual step I can't do myself; magic link email is fully self-contained and was the pragmatic choice to actually ship step 8 rather than block on it. Adding Google OAuth later is a small addition (`supabase.auth.signInWithOAuth({ provider: "google" })` alongside the existing `signInWithOtp` call) once that dashboard config exists.
+
+**Flow**: submitting the email form calls `supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: "${origin}/auth/callback?matchId=..." } })` from the *browser* client (`src/lib/supabase/client.ts`) — this has to be the browser client specifically, since Supabase's PKCE flow stores a code verifier in the browser's local storage that only that same browser client can retrieve later. Clicking the emailed link lands on `src/app/auth/callback/route.ts` (new Route Handler), which exchanges the code for a session via the *server* client (`src/lib/supabase/server.ts` — same one built in step 1, unused until now), reads the now-authenticated `user.id`, and calls `lockMatchScore(matchId, guestId, user.id)`.
+
+**`src/lib/match/lock-score.ts`** — deliberately a plain module, not exported from `match/actions.ts` (which has `"use server"` at the top, meaning every export there becomes a public HTTP-callable Server Action). `lockMatchScore` takes a raw `userId` as a parameter; if it were client-callable, anyone could pass an arbitrary `userId` and hijack any match's score. It's only ever called from the callback Route Handler, where `userId` comes from a verified Supabase Auth session, never from client input. The lock itself is one `UPDATE match_results SET player_id = userId, is_locked = true WHERE match_id = ... AND player_id = guestId` — verified directly against the live project that this only touches the intended row, the other 3 participants are untouched.
+
+**Identity resolution gotcha this surfaced**: once locked, a `match_results` row's `player_id` changes from the guest's UUID to the auth user's UUID. If the match page kept comparing against the raw guest ID, a player who locked their own score would stop matching their own row — "You" would silently disappear and their score would look like a stranger's. Fixed via `getMyParticipantId(matchId)` (`src/lib/match/actions.ts`): checks for an active Supabase Auth session server-side, and if a `match_results` row exists for `(matchId, user.id)`, resolves to that; otherwise falls back to the guest ID. The match page now passes this resolved ID to `MatchRoom` as `guestId` — it's a "who am I for this match" identity, not necessarily the literal guest cookie value.
+
+**Also fixed while here**: `MatchRoom`'s `matchEnded` state previously always initialized to `false` regardless of the match's actual `ended_at` — reopening an already-finished match (exactly what happens after the magic-link email round trip, which can take real time) would render the in-progress question view, stuck, since the realtime subscription only fires on *new* events after mount, not for state changes that already happened. Now `MatchPage` passes `initialMatchEnded={match.endedAt !== null}` and `MatchRoom` seeds its state from that.
+
+**Manual step required, not yet verified end-to-end**: the actual magic-link email round trip needs `http://localhost:3000/auth/callback` (and the eventual production domain) added to Supabase's Authentication → URL Configuration → Redirect URLs allowlist, or `exchangeCodeForSession` will reject the callback. This is dashboard config, not something a migration can set. I verified the DB-level lock operation directly (UPDATE correctness, row targeting, `getParticipants` not crashing on a locked row with no matching `guest_sessions` entry) and the identity-resolution/matchEnded fixes via a production-build smoke test with a real matching guest cookie, but have not personally clicked a real magic-link email — no inbox access. Test this specific path yourself before considering it done.
+
+Nothing else (leaderboard, Google OAuth) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
 ## Scope discipline (v1)
 
