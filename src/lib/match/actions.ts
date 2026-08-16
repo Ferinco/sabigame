@@ -36,6 +36,8 @@ export type RoundInfo = {
 export async function getMatch(matchId: string): Promise<MatchInfo | null> {
   const admin = createAdminClient();
 
+  await admin.rpc("end_stale_matches");
+
   const { data, error } = await admin
     .from("matches")
     .select("id, category, started_at, ended_at, question_count, question_duration_ms")

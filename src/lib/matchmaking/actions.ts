@@ -43,6 +43,8 @@ export async function checkMatchmakingStatus(): Promise<QueueStatus> {
   const guestId = await getGuestId();
   const admin = createAdminClient();
 
+  await admin.rpc("end_stale_matches");
+
   const { data: participant, error: participantError } = await admin
     .from("match_results")
     .select("match_id, matches!inner(ended_at)")
