@@ -213,9 +213,11 @@ export function MatchRoom({
       const key = `${round.id}:${participant.playerId}`;
       if (botTriggeredKeys.current.has(key)) continue;
       botTriggeredKeys.current.add(key);
-      triggerBotMove(participant.playerId, round.id).catch(() => {});
+      triggerBotMove(participant.playerId, round.id)
+        .then(applyResolution)
+        .catch(() => {});
     }
-  }, [round, participants]);
+  }, [round, participants, applyResolution]);
 
   useEffect(() => {
     const supabase = createClient();

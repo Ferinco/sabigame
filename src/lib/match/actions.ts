@@ -223,7 +223,14 @@ export async function getMyGuestId(): Promise<string> {
   return getGuestId();
 }
 
-export async function triggerBotMove(botPlayerId: string, roundId: string): Promise<void> {
+const NO_OP_ANSWER_RESULT: SubmitAnswerResult = {
+  correct: false,
+  recorded: false,
+  matchEnded: false,
+  nextRoundId: null,
+};
+
+export async function triggerBotMove(botPlayerId: string, roundId: string): Promise<SubmitAnswerResult> {
   const admin = createAdminClient();
 
   const { data: round, error: roundError } = await admin
@@ -236,7 +243,7 @@ export async function triggerBotMove(botPlayerId: string, roundId: string): Prom
     throw new Error(`Failed to fetch round for bot move: ${roundError.message}`);
   }
 
-  if (!round || round.resolved_at) return;
+  if (!round || round.resolved_at) return NO_OP_ANSWER_RESULT;
 
   const { data: question, error: questionError } = await admin
     .from("questions")
@@ -248,11 +255,11 @@ export async function triggerBotMove(botPlayerId: string, roundId: string): Prom
     throw new Error(`Failed to fetch question for bot move: ${questionError.message}`);
   }
 
-  if (!question) return;
+  if (!question) return NO_OP_ANSWER_RESULT;
 
   await new Promise((resolve) => setTimeout(resolve, pickBotDelayMs()));
 
   const answerIndex = pickBotAnswerIndex(question.correct_answer_index, round.options.length);
 
-  await callSubmitAnswer(botPlayerId, roundId, answerIndex);
+  return callSubmitAnswer(botPlayerId, roundId, answerIndex);
 }
