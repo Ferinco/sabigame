@@ -6,7 +6,7 @@ A web-based, no-download trivia game. Players pick a category, get grouped into 
 
 ## Core flow
 
-1. Land on site → enter a nickname → pick a category (start with **Football** and **General Knowledge**)
+1. Land on site → enter a nickname → pick a category (**Football**, **General Knowledge**, **Afrobeats**)
 2. Hit "Find Match" → join a matchmaking queue for that category
 3. Queue gathers up to **4 players** for that category. If fewer than 4 are waiting after ~15-20 seconds, the match starts anyway with whoever's there, filling remaining seats with bots (randomized correct/incorrect answers with a randomized delay) so it always starts with 4 total. At least 1 real player is always required — this happens automatically, since the fallback only ever runs because a real player is waiting.
 4. Match starts: all players see the same question + 4 options at the same instant (server-timestamped, so it's fair regardless of network latency)
@@ -35,7 +35,7 @@ A web-based, no-download trivia game. Players pick a category, get grouped into 
 ## Build order (do in this sequence)
 
 1. **Scaffold the Next.js + Tailwind project**, set up Supabase client
-2. **Question bank**: seed `questions` table with ~100-150 hand-written questions across the 2 starting categories
+2. **Question bank**: seed `questions` table with ~75 hand-written questions per category
 3. **Guest session handling**: generate + persist an anonymous UUID per visitor (cookie or localStorage) before anything else
 4. **Matchmaking queue**: category-scoped queue table/logic — gather up to 4 guests waiting in the same category into a `match`
 5. **Real-time match loop**: Supabase Realtime channel per match; server broadcasts question + a per-question countdown, all clients render simultaneously. Every correct answer scores (validated server-side, not just client-side), ranked by speed (10/8/7/6). A question resolves once every player has answered or its timer runs out, whichever comes first. Match ends after a fixed number of questions, not elapsed time.
@@ -47,7 +47,7 @@ A web-based, no-download trivia game. Players pick a category, get grouped into 
 ## Scope discipline for v1 — explicitly SKIP these for now
 
 - No persistent accounts required to just play (guest-first, always)
-- No more than 2 categories at launch
+- Categories added deliberately, one at a time (Football, General Knowledge, then Afrobeats) — not an open free-for-all list
 - No client-side-only score validation — always verify server-side to prevent cheating
 - No elaborate bot AI — random correct/incorrect + randomized delay is enough
 - No mobile app — web only, this is the whole point (no-install, link-and-play)

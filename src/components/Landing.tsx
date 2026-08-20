@@ -10,13 +10,23 @@ import {
 } from "@/lib/matchmaking/actions";
 import { submitNickname } from "@/lib/guest/actions";
 import { CATEGORIES, type Category } from "@/lib/categories";
+import { BrainIllustration, FootballIllustration, MicrophoneIllustration } from "@/components/Illustrations";
 
-const CATEGORY_META: Record<Category, { label: string; emoji: string; from: string; to: string }> = {
-  football: { label: "Football", emoji: "⚽", from: "from-accent-green", to: "to-accent-blue" },
+const CATEGORY_META: Record<
+  Category,
+  { label: string; Icon: (props: { className?: string }) => React.JSX.Element; from: string; to: string }
+> = {
+  football: { label: "Football", Icon: FootballIllustration, from: "from-accent-green", to: "to-accent-blue" },
   general_knowledge: {
     label: "General Knowledge",
-    emoji: "🧠",
+    Icon: BrainIllustration,
     from: "from-brand",
+    to: "to-accent-red",
+  },
+  afrobeats: {
+    label: "Afrobeats",
+    Icon: MicrophoneIllustration,
+    from: "from-accent-yellow",
     to: "to-accent-red",
   },
 };
@@ -165,13 +175,16 @@ export function Landing({ initialNickname }: { initialNickname: string | null })
           <div className="flex w-full flex-col gap-3">
             {CATEGORIES.map((category) => {
               const meta = CATEGORY_META[category];
+              const Icon = meta.Icon;
               return (
                 <button
                   key={category}
                   onClick={() => handleFindMatch(category)}
                   className={`flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br ${meta.from} ${meta.to} px-5 py-4 text-left font-display text-lg font-bold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95`}
                 >
-                  <span className="text-2xl">{meta.emoji}</span>
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/25 text-white">
+                    <Icon className="h-7 w-7" />
+                  </span>
                   {meta.label}
                 </button>
               );

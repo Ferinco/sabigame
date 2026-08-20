@@ -92,7 +92,7 @@ The 4-player/per-question-countdown redesign fixes this structurally rather than
 
 All 9 steps of the SPEC.md build order have a first pass done:
 1. Project scaffolding + Supabase client wiring.
-2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table; `supabase/seed.sql` seeds 150 hand-written questions (75 Football, 75 General Knowledge).
+2. Question bank: `supabase/migrations/20260813000000_create_questions.sql` creates the `questions` table; `supabase/seed.sql` seeds 225 hand-written questions (75 Football, 75 General Knowledge, 75 Afrobeats — the latter added later, see the "Third category: Afrobeats" section below).
 3. Guest session handling — see above.
 4. Matchmaking queue — see above.
 5. Real-time match loop — see above.
@@ -165,10 +165,19 @@ No new external service (no Redis/Upstash) — a lightweight Postgres-based limi
 
 Nothing else (Google OAuth) has been built yet. Follow the build order in `SPEC.md` for what comes next, and don't skip ahead — later steps depend on earlier ones.
 
+## Third category: Afrobeats
+
+Added as the third playable category alongside Football and General Knowledge. The category system was already built generically (a single `CATEGORIES` array + a `Record<Category, ...>` UI metadata map), and the landing page already had a disabled "Afrobeats — New category coming soon" placeholder card wired up with its own illustration (`MicrophoneIllustration`) — this just activated it as a real, playable button, no redesign needed.
+
+- `src/lib/categories.ts` — `CATEGORIES` now `["football", "general_knowledge", "afrobeats"]`.
+- `src/components/Landing.tsx` — `CATEGORY_META.afrobeats` added (yellow→red gradient, `MicrophoneIllustration`), placeholder card removed.
+- `supabase/migrations/20260823000000_add_afrobeats_category.sql` — drops and re-adds the `category` check constraint on `questions`, `matches`, and `matchmaking_queue` (all three were hardcoded to `'football'`/`'general_knowledge'` only, unnamed inline column constraints so the default Postgres names — `<table>_category_check` — apply) to also allow `'afrobeats'`. **Not yet pushed to the live project** — this session had no DB connection string/password available (only the REST URL + anon/service-role keys in `.env.local`), and DDL can't go through PostgREST. Needs `supabase db push` with the pooler `--db-url` (same method noted above) before Afrobeats actually works end-to-end.
+- `supabase/seed.sql` — added 75 hand-written Afrobeats questions (Fela Kuti/Afrobeat history, modern artists — Burna Boy, Wizkid, Davido, Tiwa Savage, Rema, Tems, CKay, and more — real names, labels, hits, awards, genre/dance trivia), matching the 75-per-category count the other two categories use. Also not yet pushed — same blocker as above; re-running seed.sql truncates and reinserts *all* categories, so it needs the migration applied first (the check constraint would otherwise reject the new rows).
+
 ## Scope discipline (v1)
 
 - Guest-first: no account required to play
-- Only 2 categories at launch: Football, General Knowledge
+- Three categories: Football, General Knowledge, Afrobeats
 - Matches are up to 4 players, at least 1 always real, rest filled with bots on timeout
 - Score validation is always server-side, never client-only
 - Bot opponents: random correct/incorrect + randomized delay, no real AI
