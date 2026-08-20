@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   submitAnswer,
   triggerBotMove,
   expireRound,
+  getCurrentRound,
+  getMatch,
   type RoundInfo,
   type ParticipantInfo,
 } from "@/lib/match/actions";
@@ -160,6 +162,21 @@ export function MatchRoom({
     setFeedback(null);
   }
 
+  const applyResolution = useCallback(
+    async (result: { matchEnded: boolean; nextRoundId: string | null }) => {
+      if (result.matchEnded) {
+        setMatchEnded(true);
+        return;
+      }
+      if (!result.nextRoundId) return;
+
+      const latest = await getCurrentRound(matchId);
+      if (!latest) return;
+      setRound((current) => (!current || latest.roundNumber > current.roundNumber ? latest : current));
+    },
+    [matchId]
+  );
+
   useEffect(() => {
     roundRef.current = round;
   }, [round]);
@@ -178,12 +195,15 @@ export function MatchRoom({
     expireTriggeredRounds.current.add(round.id);
 
     const delay = computeRemainingMs(round.expiresAt, Date.now()) + EXPIRE_CALL_BUFFER_MS;
-    const timeout = setTimeout(() => {
-      expireRound(round.id).catch(() => {});
+    const timeout = setTimeout(async () => {
+      try {
+        const result = await expireRound(round.id);
+        await applyResolution(result);
+      } catch {}
     }, delay);
 
     return () => clearTimeout(timeout);
-  }, [round]);
+  }, [round, applyResolution]);
 
   useEffect(() => {
     if (!round || round.resolvedAt) return;
@@ -248,6 +268,31 @@ export function MatchRoom({
     };
   }, [matchId]);
 
+  useEffect(() => {
+    if (matchEnded) return;
+
+    function handleVisibility() {
+      if (document.visibilityState !== "visible") return;
+
+      (async () => {
+        try {
+          const match = await getMatch(matchId);
+          if (match?.endedAt) {
+            setMatchEnded(true);
+            return;
+          }
+
+          const latest = await getCurrentRound(matchId);
+          if (!latest) return;
+          setRound((current) => (!current || latest.roundNumber > current.roundNumber ? latest : current));
+        } catch {}
+      })();
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [matchId, matchEnded]);
+
   async function handleAnswer(index: number) {
     if (!round || submitting || matchEnded || hasAnswered || round.resolvedAt) return;
 
@@ -258,10 +303,7 @@ export function MatchRoom({
       if (result.recorded) {
         setHasAnswered(true);
         setFeedback(deriveFeedback(result));
-      }
-
-      if (result.matchEnded) {
-        setMatchEnded(true);
+        await applyResolution(result);
       }
     } finally {
       setSubmitting(false);
