@@ -15,6 +15,14 @@ import { deriveFeedback } from "@/lib/match/scoring";
 import { getBotName } from "@/lib/match/bot-names";
 
 const EXPIRE_CALL_BUFFER_MS = 300;
+const MEDALS = ["🥇", "🥈", "🥉"];
+const ANSWER_STYLES = [
+  { bg: "bg-accent-red", icon: "▲" },
+  { bg: "bg-accent-blue", icon: "◆" },
+  { bg: "bg-accent-yellow", icon: "●" },
+  { bg: "bg-accent-green", icon: "■" },
+];
+const AVATAR_COLORS = ["bg-brand", "bg-accent-blue", "bg-accent-green", "bg-accent-yellow"];
 
 type DbRoundRow = {
   id: string;
@@ -57,6 +65,63 @@ function mapRound(row: DbRoundRow): RoundInfo {
     expiresAt: row.expires_at,
     resolvedAt: row.resolved_at,
   };
+}
+
+function CountdownRing({ timeLeftMs, totalMs }: { timeLeftMs: number; totalMs: number }) {
+  const pct = totalMs > 0 ? Math.max(0, Math.min(1, timeLeftMs / totalMs)) : 0;
+  const radius = 26;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - pct);
+  const color = pct > 0.5 ? "var(--accent-green)" : pct > 0.25 ? "var(--accent-yellow)" : "var(--accent-red)";
+
+  return (
+    <div className="relative h-14 w-14 shrink-0">
+      <svg viewBox="0 0 60 60" className="h-14 w-14 -rotate-90">
+        <circle cx="30" cy="30" r={radius} fill="none" stroke="var(--card-border)" strokeWidth="6" />
+        <circle
+          cx="30"
+          cy="30"
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth="6"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset 0.2s linear, stroke 0.2s linear" }}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center font-display text-base font-bold text-foreground">
+        {Math.ceil(timeLeftMs / 1000)}
+      </span>
+    </div>
+  );
+}
+
+function ConfettiBurst() {
+  const colors = [
+    "var(--accent-red)",
+    "var(--accent-blue)",
+    "var(--accent-yellow)",
+    "var(--accent-green)",
+    "var(--brand)",
+  ];
+
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      {Array.from({ length: 12 }).map((_, i) => {
+        const angle = (i / 12) * 2 * Math.PI;
+        const distance = 50 + (i % 3) * 15;
+        const style = {
+          backgroundColor: colors[i % colors.length],
+          "--tx": `${Math.cos(angle) * distance}px`,
+          "--ty": `${Math.sin(angle) * distance}px`,
+        } as React.CSSProperties;
+
+        return <span key={i} className="confetti-dot absolute h-2.5 w-2.5 rounded-full" style={style} />;
+      })}
+    </div>
+  );
 }
 
 export function MatchRoom({
@@ -209,20 +274,32 @@ export function MatchRoom({
     const me = participants.find((p) => p.playerId === guestId);
 
     return (
-      <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-black">
-        <div className="flex w-full max-w-sm flex-col items-center gap-6">
-          <h1 className="text-2xl font-bold text-black dark:text-zinc-50">Match ended</h1>
+      <div className="flex flex-1 items-center justify-center bg-background px-6">
+        <div className="animate-pop-in flex w-full max-w-sm flex-col items-center gap-6 py-16">
+          <span className="text-5xl">🏆</span>
+          <h1 className="font-display text-3xl font-extrabold text-foreground">
+            Match ended!
+          </h1>
           <ol className="flex w-full flex-col gap-2">
             {ranked.map((p, i) => (
               <li
                 key={p.playerId}
-                className="flex items-center justify-between rounded-lg border border-black/[.08] bg-white px-4 py-2 dark:border-white/[.145] dark:bg-zinc-900"
+                className="animate-bounce-in flex items-center gap-3 rounded-2xl border-2 border-card-border bg-card px-4 py-3 shadow-sm"
+                style={{ animationDelay: `${i * 80}ms` }}
               >
-                <span>
-                  {i + 1}. {displayName(p, guestId)}
+                <span className="w-7 text-center text-xl">{MEDALS[i] ?? `${i + 1}.`}</span>
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}
+                >
+                  {displayName(p, guestId).charAt(0).toUpperCase()}
+                </span>
+                <span className="flex-1 font-semibold text-foreground">
+                  {displayName(p, guestId)}
                   {p.isLocked && " 🔒"}
                 </span>
-                <span className="font-semibold">{p.score}</span>
+                <span className="font-display text-lg font-extrabold text-brand">
+                  {p.score}
+                </span>
               </li>
             ))}
           </ol>
@@ -230,9 +307,9 @@ export function MatchRoom({
           {me && !me.isBot && !me.isLocked && (
             <button
               onClick={() => router.push(`/match/${matchId}/lock`)}
-              className="w-full rounded-full border border-black/[.08] px-5 py-3 text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.08]"
+              className="w-full rounded-2xl border-2 border-brand px-5 py-3.5 font-display font-bold text-brand transition-all hover:scale-[1.02] hover:bg-brand/10 active:scale-95"
             >
-              Lock this score & join global ranking
+              🔒 Lock this score & join global ranking
             </button>
           )}
 
@@ -241,7 +318,7 @@ export function MatchRoom({
               router.push("/");
               router.refresh();
             }}
-            className="w-full rounded-full bg-foreground px-5 py-3 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+            className="w-full rounded-2xl bg-brand px-5 py-3.5 font-display text-lg font-bold text-white shadow-lg shadow-brand/30 transition-all hover:scale-[1.02] hover:bg-brand-dark active:scale-95"
           >
             New Match
           </button>
@@ -250,47 +327,76 @@ export function MatchRoom({
     );
   }
 
+  const totalMs = round ? new Date(round.expiresAt).getTime() - new Date(round.startedAt).getTime() : 5000;
+
   return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-12 dark:bg-black">
+    <div className="flex flex-1 flex-col items-center bg-background px-6 py-10">
       <div className="flex w-full max-w-md flex-col items-center gap-6">
-        <div className="flex w-full items-center justify-between text-sm text-zinc-600 dark:text-zinc-400">
-          <span>Question {round ? round.roundNumber : "-"} / {questionCount}</span>
-          <span>{Math.ceil(timeLeftMs / 1000)}s</span>
+        <div className="flex w-full items-center justify-between">
+          <span className="rounded-full bg-card px-4 py-1.5 text-sm font-bold text-muted shadow-sm">
+            Question {round ? round.roundNumber : "-"} / {questionCount}
+          </span>
+          {round && <CountdownRing timeLeftMs={timeLeftMs} totalMs={totalMs} />}
         </div>
 
-        <div className="flex w-full flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {participants.map((p) => (
-            <span key={p.playerId}>
-              {displayName(p, guestId)}: {p.score}
+        <div className="flex w-full flex-wrap justify-center gap-2">
+          {participants.map((p, i) => (
+            <span
+              key={p.playerId}
+              className="flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm"
+            >
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}
+              >
+                {displayName(p, guestId).charAt(0).toUpperCase()}
+              </span>
+              {p.score}
             </span>
           ))}
         </div>
 
         {round ? (
           <>
-            <h2 className="text-center text-xl font-semibold text-black dark:text-zinc-50">
+            <h2
+              key={round.id}
+              className="animate-pop-in min-h-16 text-center font-display text-2xl font-bold text-foreground"
+            >
               {round.questionText}
             </h2>
-            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
-              {round.options.map((option, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleAnswer(index)}
-                  disabled={submitting || hasAnswered || Boolean(round.resolvedAt)}
-                  className="rounded-xl border border-black/[.08] bg-white px-4 py-3 text-left transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:bg-zinc-900 dark:hover:bg-white/[.08]"
-                >
-                  {option}
-                </button>
-              ))}
+            <div className="relative grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
+              {feedback === "correct" && <ConfettiBurst />}
+              {round.options.map((option, index) => {
+                const style = ANSWER_STYLES[index % ANSWER_STYLES.length];
+                return (
+                  <button
+                    key={`${round.id}-${index}`}
+                    onClick={() => handleAnswer(index)}
+                    disabled={submitting || hasAnswered || Boolean(round.resolvedAt)}
+                    className={`animate-bounce-in flex items-center gap-3 rounded-2xl ${style.bg} px-4 py-4 text-left font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100`}
+                    style={{ animationDelay: `${index * 60}ms` }}
+                  >
+                    <span className="text-lg">{style.icon}</span>
+                    {option}
+                  </button>
+                );
+              })}
             </div>
-            {feedback === "correct" && <p className="text-green-600">Correct!</p>}
-            {feedback === "wrong" && <p className="text-red-600">Wrong</p>}
+            {feedback === "correct" && (
+              <p className="animate-bounce-in font-display text-xl font-bold text-accent-green">
+                Correct! 🎉
+              </p>
+            )}
+            {feedback === "wrong" && (
+              <p className="animate-wiggle font-display text-xl font-bold text-accent-red">
+                Not quite 😬
+              </p>
+            )}
             {hasAnswered && !round.resolvedAt && (
-              <p className="text-zinc-500">Waiting for other players…</p>
+              <p className="text-muted">Waiting for other players…</p>
             )}
           </>
         ) : (
-          <p className="text-zinc-600 dark:text-zinc-400">Loading question…</p>
+          <p className="text-muted">Loading question…</p>
         )}
       </div>
     </div>

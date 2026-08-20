@@ -11,10 +11,31 @@ import {
 import { submitNickname } from "@/lib/guest/actions";
 import { CATEGORIES, type Category } from "@/lib/categories";
 
-const CATEGORY_LABELS: Record<Category, string> = {
-  football: "Football",
-  general_knowledge: "General Knowledge",
+const CATEGORY_META: Record<Category, { label: string; emoji: string; from: string; to: string }> = {
+  football: { label: "Football", emoji: "⚽", from: "from-accent-green", to: "to-accent-blue" },
+  general_knowledge: {
+    label: "General Knowledge",
+    emoji: "🧠",
+    from: "from-brand",
+    to: "to-accent-red",
+  },
 };
+
+function Blobs() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="animate-blob absolute -left-16 -top-16 h-64 w-64 rounded-full bg-accent-yellow/40 blur-2xl" />
+      <div
+        className="animate-blob absolute -right-10 top-24 h-72 w-72 rounded-full bg-brand/30 blur-2xl"
+        style={{ animationDelay: "2s" }}
+      />
+      <div
+        className="animate-blob absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-accent-green/30 blur-2xl"
+        style={{ animationDelay: "4s" }}
+      />
+    </div>
+  );
+}
 
 export function Landing({ initialNickname }: { initialNickname: string | null }) {
   const router = useRouter();
@@ -80,11 +101,16 @@ export function Landing({ initialNickname }: { initialNickname: string | null })
 
   if (!nicknameConfirmed) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-black">
-        <main className="flex w-full max-w-sm flex-col items-center gap-8 px-6 py-24">
-          <h1 className="text-3xl font-bold tracking-tight text-black dark:text-zinc-50">
-            SabiGame
-          </h1>
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-background">
+        <Blobs />
+        <main className="animate-pop-in relative z-10 flex w-full max-w-sm flex-col items-center gap-8 px-6 py-24">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <span className="text-5xl">🎉</span>
+            <h1 className="font-display text-4xl font-extrabold tracking-tight text-foreground">
+              SabiGame
+            </h1>
+            <p className="text-muted">What should we call you?</p>
+          </div>
           <form onSubmit={handleNicknameSubmit} className="flex w-full flex-col gap-3">
             <input
               value={nickname}
@@ -92,16 +118,16 @@ export function Landing({ initialNickname }: { initialNickname: string | null })
               placeholder="Enter a nickname"
               maxLength={20}
               autoFocus
-              className="w-full rounded-full border border-black/[.08] bg-white px-5 py-3 text-black outline-none focus:border-black/[.24] dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-white/[.3]"
+              className="w-full rounded-2xl border-2 border-card-border bg-card px-5 py-3.5 text-foreground outline-none transition-colors focus:border-brand"
             />
             <button
               type="submit"
               disabled={savingNickname || nickname.trim().length === 0}
-              className="w-full rounded-full bg-foreground px-5 py-3 text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
+              className="w-full rounded-2xl bg-brand px-5 py-3.5 font-display text-lg font-bold text-white shadow-lg shadow-brand/30 transition-all hover:scale-[1.02] hover:bg-brand-dark active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
             >
-              Continue
+              Let&apos;s go →
             </button>
-            {nicknameError && <p className="text-sm text-red-600">{nicknameError}</p>}
+            {nicknameError && <p className="text-sm text-accent-red">{nicknameError}</p>}
           </form>
         </main>
       </div>
@@ -109,15 +135,16 @@ export function Landing({ initialNickname }: { initialNickname: string | null })
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-black">
-      <main className="flex w-full max-w-sm flex-col items-center gap-8 px-6 py-24">
-        <div className="flex flex-col items-center gap-1">
-          <h1 className="text-3xl font-bold tracking-tight text-black dark:text-zinc-50">
+    <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-background">
+      <Blobs />
+      <main className="animate-pop-in relative z-10 flex w-full max-w-sm flex-col items-center gap-8 px-6 py-24">
+        <div className="flex flex-col items-center gap-1 text-center">
+          <h1 className="font-display text-4xl font-extrabold tracking-tight text-foreground">
             SabiGame
           </h1>
           {status !== "waiting" && (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Playing as {nickname}{" "}
+            <p className="text-sm text-muted">
+              Playing as <span className="font-semibold text-foreground">{nickname}</span>{" "}
               <button onClick={() => setNicknameConfirmed(false)} className="underline">
                 change
               </button>
@@ -126,25 +153,36 @@ export function Landing({ initialNickname }: { initialNickname: string | null })
         </div>
 
         {status === "waiting" ? (
-          <p className="text-zinc-600 dark:text-zinc-400">Finding you an opponent…</p>
+          <div className="flex flex-col items-center gap-3 py-6">
+            <span className="animate-wiggle text-5xl" style={{ animationIterationCount: "infinite" }}>
+              🔎
+            </span>
+            <p className="font-display text-lg font-semibold text-foreground">
+              Finding you opponents…
+            </p>
+          </div>
         ) : (
           <div className="flex w-full flex-col gap-3">
-            {CATEGORIES.map((category) => (
-              <button
-                key={category}
-                onClick={() => handleFindMatch(category)}
-                className="w-full rounded-full bg-foreground px-5 py-3 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
-              >
-                {CATEGORY_LABELS[category]}
-              </button>
-            ))}
+            {CATEGORIES.map((category) => {
+              const meta = CATEGORY_META[category];
+              return (
+                <button
+                  key={category}
+                  onClick={() => handleFindMatch(category)}
+                  className={`flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br ${meta.from} ${meta.to} px-5 py-4 text-left font-display text-lg font-bold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95`}
+                >
+                  <span className="text-2xl">{meta.emoji}</span>
+                  {meta.label}
+                </button>
+              );
+            })}
           </div>
         )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-accent-red">{error}</p>}
 
-        <Link href="/leaderboard" className="text-sm underline text-zinc-600 dark:text-zinc-400">
-          Leaderboard
+        <Link href="/leaderboard" className="text-sm font-semibold text-muted underline underline-offset-4">
+          🏆 Leaderboard
         </Link>
       </main>
     </div>
