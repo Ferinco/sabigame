@@ -37,16 +37,27 @@ export function LockScoreForm({ matchId }: { matchId: string }) {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-black">
-      <main className="flex w-full max-w-sm flex-col items-center gap-6 px-6 py-24">
-        <h1 className="text-2xl font-bold text-black dark:text-zinc-50">
+    <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-background">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="animate-blob absolute -left-16 -top-16 h-64 w-64 rounded-full bg-brand/30 blur-2xl" />
+        <div
+          className="animate-blob absolute -right-10 bottom-10 h-72 w-72 rounded-full bg-accent-yellow/40 blur-2xl"
+          style={{ animationDelay: "2s" }}
+        />
+      </div>
+
+      <main className="animate-pop-in relative z-10 flex w-full max-w-sm flex-col items-center gap-6 px-6 py-24">
+        <span className="text-5xl">🔒</span>
+        <h1 className="text-center font-display text-2xl font-extrabold text-foreground">
           Lock this score & join global ranking
         </h1>
 
         {status === "sent" ? (
-          <p className="text-sm text-zinc-500">
-            Check your email for a magic link to lock this score.
-          </p>
+          <div className="animate-bounce-in flex flex-col items-center gap-2 text-center">
+            <span className="text-4xl">📬</span>
+            <p className="font-semibold text-foreground">Check your email</p>
+            <p className="text-sm text-muted">We sent a magic link to lock this score in.</p>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex w-full flex-col gap-3">
             <input
@@ -56,21 +67,21 @@ export function LockScoreForm({ matchId }: { matchId: string }) {
               placeholder="Your email"
               required
               autoFocus
-              className="w-full rounded-full border border-black/[.08] bg-white px-5 py-3 text-black outline-none focus:border-black/[.24] dark:border-white/[.145] dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-white/[.3]"
+              className="w-full rounded-2xl border-2 border-card-border bg-card px-5 py-3.5 text-foreground outline-none transition-colors focus:border-brand"
             />
             <button
               type="submit"
               disabled={status === "sending"}
-              className="w-full rounded-full bg-foreground px-5 py-3 text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
+              className="w-full rounded-2xl bg-brand px-5 py-3.5 font-display text-lg font-bold text-white shadow-lg shadow-brand/30 transition-all hover:scale-[1.02] hover:bg-brand-dark active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
             >
-              Send magic link
+              {status === "sending" ? "Sending…" : "Send magic link ✨"}
             </button>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-accent-red">{error}</p>}
           </form>
         )}
 
-        <Link href={`/match/${matchId}`} className="text-sm underline text-zinc-600 dark:text-zinc-400">
-          Back to results
+        <Link href={`/match/${matchId}`} className="text-sm font-semibold text-muted underline underline-offset-4">
+          ← Back to results
         </Link>
       </main>
     </div>

@@ -13,16 +13,15 @@ import {
 import { computeRemainingMs } from "@/lib/match/countdown";
 import { deriveFeedback } from "@/lib/match/scoring";
 import { getBotName } from "@/lib/match/bot-names";
+import { MEDALS, AVATAR_COLORS } from "@/lib/ui/podium";
 
 const EXPIRE_CALL_BUFFER_MS = 300;
-const MEDALS = ["🥇", "🥈", "🥉"];
 const ANSWER_STYLES = [
   { bg: "bg-accent-red", icon: "▲" },
   { bg: "bg-accent-blue", icon: "◆" },
   { bg: "bg-accent-yellow", icon: "●" },
   { bg: "bg-accent-green", icon: "■" },
 ];
-const AVATAR_COLORS = ["bg-brand", "bg-accent-blue", "bg-accent-green", "bg-accent-yellow"];
 
 type DbRoundRow = {
   id: string;
