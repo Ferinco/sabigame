@@ -3,6 +3,7 @@
 import { getGuestId } from "@/lib/guest/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isCategory } from "@/lib/categories";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export type JoinQueueResult =
   | { status: "matched"; matchId: string; firstRoundId: string }
@@ -14,6 +15,8 @@ export async function joinMatchmakingQueue(category: string): Promise<JoinQueueR
   }
 
   const guestId = await getGuestId();
+  await checkRateLimit(`join_queue:${guestId}`, 10, 60);
+
   const admin = createAdminClient();
 
   const { data, error } = await admin.rpc("matchmaking_try_form_match", {
@@ -41,6 +44,8 @@ export type QueueStatus =
 
 export async function checkMatchmakingStatus(): Promise<QueueStatus> {
   const guestId = await getGuestId();
+  await checkRateLimit(`check_status:${guestId}`, 40, 60);
+
   const admin = createAdminClient();
 
   await admin.rpc("end_stale_matches");

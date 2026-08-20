@@ -4,6 +4,7 @@ import { getGuestId } from "@/lib/guest/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { pickBotAnswerIndex, pickBotDelayMs } from "@/lib/match/bot-logic";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export type MatchInfo = {
   id: string;
@@ -192,6 +193,7 @@ export async function submitAnswer(
   answerIndex: number
 ): Promise<SubmitAnswerResult> {
   const guestId = await getGuestId();
+  await checkRateLimit(`submit_answer:${guestId}`, 30, 60);
   return callSubmitAnswer(guestId, roundId, answerIndex);
 }
 

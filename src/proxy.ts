@@ -5,9 +5,25 @@ import {
   GUEST_ID_HEADER,
   GUEST_ID_COOKIE_MAX_AGE,
 } from "@/lib/guest/constants";
+import { checkRateLimit, RateLimitError } from "@/lib/rate-limit";
 
 export async function proxy(request: NextRequest) {
   const existingGuestId = request.cookies.get(GUEST_ID_COOKIE)?.value;
+
+  if (!existingGuestId) {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+
+    try {
+      await checkRateLimit(`new_guest:${ip}`, 20, 3600);
+    } catch (err) {
+      if (err instanceof RateLimitError) {
+        return new NextResponse("Too many new sessions from this network, try again later.", {
+          status: 429,
+        });
+      }
+    }
+  }
+
   const guestId = existingGuestId ?? crypto.randomUUID();
 
   const requestHeaders = new Headers(request.headers);
